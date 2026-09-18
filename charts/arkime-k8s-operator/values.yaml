@@ -1,0 +1,23 @@
+image:
+  repository: ghcr.io/bwagner5/arkime-k8s-operator
+  tag: ''
+  digest: ''
+  pullPolicy: IfNotPresent
+replicas: 1
+leaderElection: true
+watchNamespaces: []
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+nodeSelector: {}
+tolerations: []
+affinity: {}
+serviceAccount:
+  create: true
+  name: ''
+metrics:
+  enabled: false
+  port: 8080

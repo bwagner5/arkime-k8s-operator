@@ -1,0 +1,21 @@
+apiVersion: arkime.arkime.com/v1alpha1
+kind: ArkimeCluster
+metadata:
+  name: home
+  namespace: arkime
+spec:
+  database:
+    engine: OpenSearch
+    endpoints: [https://opensearch.example.net:9200]
+    auth:
+      basicAuthSecretRef:
+        name: arkime-database
+        key: basicAuth
+  capture:
+    node:
+      enabled: true
+      interfaces: [eno1]
+      storage:
+        hostPath: /var/lib/arkime-pcap
+  retention:
+    sessionsDays: 7

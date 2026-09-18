@@ -1,0 +1,7 @@
+apiVersion: v2
+name: arkime-k8s-operator
+description: Controller for ArkimeCluster; install the matching CRD chart first
+type: application
+version: 0.0.0-dev
+appVersion: 0.0.0-dev
+kubeVersion: '>=1.34.0-0'

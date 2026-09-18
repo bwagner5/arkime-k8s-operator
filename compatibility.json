@@ -1,0 +1,27 @@
+{
+  "arkimeVersion": "6.7.0",
+  "arkimeImage": "ghcr.io/arkime/arkime/arkime@sha256:754ac8d50c8d4136462c3bb3701c400be66310020ab01d5ea94a4e73942b0127",
+  "architectures": [
+    "linux/amd64",
+    "linux/arm64"
+  ],
+  "kubernetesFloor": "1.34.0",
+  "gatewayAPI": "1.6.1",
+  "developmentDatabase": "opensearchproject/opensearch@sha256:798cf28e226a32f5c928dd1ed9478dd3a33d2212176aad3679020088ad3afa1a",
+  "qualification": "development; see docs/qualification.md for executed and outstanding gates",
+  "upgradePaths": [
+    {
+      "from": "6.6.0",
+      "to": "6.7.0",
+      "schemaVersion": 86,
+      "qualification": "application transition exercised on arm64; not a cross-schema migration"
+    }
+  ],
+  "integrationEnvironment": {
+    "kubernetes": "1.34.0",
+    "architecture": "linux/arm64",
+    "cni": "kindnet",
+    "database": "OpenSearch 3.3.2",
+    "date": "2026-09-18"
+  }
+}

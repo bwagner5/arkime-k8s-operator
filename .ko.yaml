@@ -1,0 +1,6 @@
+defaultBaseImage: cgr.dev/chainguard/static@sha256:bf639cba19ba56329e6907ac26a7afcdde57a80b6aa66d5100da6883196e6b82
+builds:
+  - id: manager
+    main: ./cmd/manager
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]

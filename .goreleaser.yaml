@@ -1,0 +1,40 @@
+version: 2
+dist: dist
+before:
+  hooks:
+    - make package-charts VERSION={{ .Version }}
+builds:
+  - id: manager
+    main: ./cmd/manager
+    binary: arkime-k8s-operator
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos: [linux]
+    goarch: [amd64, arm64]
+kos:
+  - build: manager
+    base_image: cgr.dev/chainguard/static@sha256:bf639cba19ba56329e6907ac26a7afcdde57a80b6aa66d5100da6883196e6b82
+    repositories: [ghcr.io/bwagner5/arkime-k8s-operator]
+    platforms: [linux/amd64, linux/arm64]
+    tags: ['{{ .Version }}']
+    bare: true
+    creation_time: '{{ .CommitTimestamp }}'
+    ko_data_creation_time: '{{ .CommitTimestamp }}'
+snapshot:
+  version_template: 0.0.0-dev
+checksum:
+  name_template: checksums.txt
+  extra_files:
+    - glob: _artifacts/helm/*.tgz
+    - glob: _artifacts/*.yaml
+    - glob: compatibility.json
+release:
+  draft: true
+  prerelease: auto
+  extra_files:
+    - glob: _artifacts/helm/*.tgz
+    - glob: _artifacts/*.yaml
+    - glob: compatibility.json

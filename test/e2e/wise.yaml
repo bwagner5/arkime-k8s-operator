@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wise-fixture
+data:
+  ips.csv: |
+    198.18.0.1

@@ -1,0 +1,24 @@
+apiVersion: arkime.arkime.com/v1alpha1
+kind: ArkimeCluster
+metadata:
+  name: upgrade
+spec:
+  version: 6.6.0
+  database:
+    engine: OpenSearch
+    endpoints: [http://opensearch:9200]
+    auth:
+      unauthenticated: true
+  cont3xt:
+    enabled: false
+  wise:
+    enabled: false
+  capture:
+    external:
+      storage:
+        volumeClaim:
+          size: 1Gi
+      exposure:
+        mode: ClusterIP
+  retention:
+    mode: External

@@ -1,0 +1,35 @@
+apiVersion: arkime.arkime.com/v1alpha1
+kind: ArkimeCluster
+metadata:
+  name: demo
+spec:
+  database:
+    engine: OpenSearch
+    endpoints: [http://opensearch:9200]
+    auth:
+      unauthenticated: true
+  wise:
+    configMapRefs: [{name: wise-fixture}]
+    config:
+      file:test:
+        file: /etc/arkime-extra/wise-fixture/ips.csv
+        type: ip
+        format: csv
+        column: '0'
+        tags: e2e-known-ip
+  capture:
+    node:
+      enabled: true
+      interfaces: [eth0]
+      viewerPort: 8105
+      storage:
+        hostPath: /var/lib/arkime-e2e
+    external:
+      enabled: true
+      storage:
+        volumeClaim:
+          size: 2Gi
+      exposure:
+        mode: ClusterIP
+  retention:
+    sessionsDays: 7

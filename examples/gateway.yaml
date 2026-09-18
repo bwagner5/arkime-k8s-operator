@@ -1,0 +1,25 @@
+apiVersion: arkime.arkime.com/v1alpha1
+kind: ArkimeCluster
+metadata:
+  name: gateway
+  namespace: arkime
+spec:
+  database:
+    engine: OpenSearch
+    endpoints: [https://opensearch.example.net:9200]
+    auth:
+      basicAuthSecretRef: {name: arkime-database, key: basicAuth}
+  capture:
+    external:
+      storage:
+        volumeClaim: {size: 100Gi}
+      exposure:
+        mode: Gateway
+        gateway:
+          gatewayClassName: your-udp-capable-class
+  web:
+    mode: Gateway
+    host: arkime.example.net
+    parentRef: {name: web, sectionName: https}
+  retention:
+    sessionsDays: 7
