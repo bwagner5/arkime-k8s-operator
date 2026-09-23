@@ -20,6 +20,7 @@ var SchemeBuilder = runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 var AddToScheme = SchemeBuilder.AddToScheme
 
 // +kubebuilder:object:root=true
+// +kubebuilder:metadata:annotations="helm.sh/resource-policy=keep"
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.resolvedVersion`

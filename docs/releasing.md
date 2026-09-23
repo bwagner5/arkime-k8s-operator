@@ -6,6 +6,8 @@ Run `make ci-verify`, the real packet tests, and the outstanding qualification m
 
 The release remains a draft until image architectures, both OCI charts and installation of those exact artifacts are verified. Review the compatibility report before publishing the draft. For a partial failure, inspect which immutable artifacts exist and resume only missing steps; do not overwrite published content under the same tag. Rebuild a new version if content must change.
 
+`make generate` uses `go tool -modfile=tools/go.mod controller-gen` to generate the CRD directly from `api/v1alpha1` into `charts/arkime-k8s-operator-crds/templates`. Edit the Go types and Kubebuilder markers, then regenerate; do not edit the chart CRD by hand. `make verify-generated` runs the same generation target in a temporary copy and checks for drift. Tool versions are pinned with Go tool directives in `tools/go.mod`; update controller-gen with `go get -modfile=tools/go.mod -tool sigs.k8s.io/controller-tools/cmd/controller-gen@<version>`.
+
 Upgrade the CRD chart first, then the operator chart. CRDs are owned exclusively by the CRD chart, rendered from Go-generated sources with `helm.sh/resource-policy: keep`. Uninstalling the CRD chart retains CRs/CRDs. To reinstall a retained CRD, use the same Helm release identity or deliberately restore its ownership metadata after backup; never delete the CRD merely to fix Helm ownership.
 
 Controller RBAC permits creating host-access workloads and reading Secrets. `watchNamespaces` limits cache scope but is not a reduction of the published cluster-wide RBAC. Use only a trusted operator service account. Separate installations must not overlap watched namespaces or managed database schemas without explicit coordination.

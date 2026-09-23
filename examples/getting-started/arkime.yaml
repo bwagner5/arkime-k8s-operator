@@ -1,0 +1,32 @@
+apiVersion: arkime.arkime.com/v1alpha1
+kind: ArkimeCluster
+metadata:
+  name: home
+  namespace: arkime
+spec:
+  database:
+    engine: OpenSearch
+    endpoints: [https://opensearch.arkime.svc:9200]
+    auth:
+      basicAuthSecretRef:
+        name: arkime-database
+        key: basicAuth
+    tls:
+      caSecretRef:
+        name: arkime-database-ca
+        key: ca.crt
+  capture:
+    node:
+      interfaces: [eth0] # Change to the interface on your capture nodes.
+      nodeSelector:
+        arkime-capture: 'true'
+      storage:
+        hostPath: /var/lib/arkime-pcap
+  cont3xt:
+    enabled: false
+  wise:
+    enabled: false
+  web:
+    mode: ClusterIP
+  retention:
+    sessionsDays: 7

@@ -1,0 +1,22 @@
+providers:
+  kubernetesGateway:
+    enabled: true
+  kubernetesCRD:
+    enabled: true
+  kubernetesIngress:
+    enabled: false
+gateway:
+  enabled: false
+ports:
+  websecure:
+    port: 8443
+    exposedPort: 443
+  tzsp:
+    port: 37008
+    exposedPort: 37008
+    protocol: UDP
+    expose:
+      default: true
+service:
+  type: LoadBalancer
+  single: false # Separate TCP and UDP Services for providers without mixed support.

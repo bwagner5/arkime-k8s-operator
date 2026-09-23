@@ -1,0 +1,35 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: arkime-selfsigned
+  namespace: arkime
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: arkime-root-ca
+  namespace: arkime
+spec:
+  isCA: true
+  commonName: Arkime private root CA
+  secretName: arkime-root-ca
+  duration: 87600h
+  renewBefore: 8760h
+  privateKey:
+    algorithm: RSA
+    size: 3072
+    rotationPolicy: Never
+  issuerRef:
+    name: arkime-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: arkime-ca
+  namespace: arkime
+spec:
+  ca:
+    secretName: arkime-root-ca

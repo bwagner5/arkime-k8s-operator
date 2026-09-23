@@ -1,0 +1,50 @@
+# All examples assume the cluster DNS suffix cluster.local.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: opensearch-node
+  namespace: arkime
+spec:
+  secretName: opensearch-node-tls
+  commonName: opensearch-node
+  duration: 2160h
+  renewBefore: 360h
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    encoding: PKCS8
+    rotationPolicy: Always
+  usages: [server auth, client auth]
+  dnsNames:
+    - opensearch
+    - opensearch.arkime
+    - opensearch.arkime.svc
+    - opensearch.arkime.svc.cluster.local
+    - opensearch-discovery
+    - '*.opensearch'
+    - '*.opensearch.arkime'
+    - '*.opensearch.arkime.svc'
+    - '*.opensearch.arkime.svc.cluster.local'
+  issuerRef:
+    name: arkime-ca
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: opensearch-admin
+  namespace: arkime
+spec:
+  secretName: opensearch-admin-tls
+  commonName: opensearch-admin
+  duration: 2160h
+  renewBefore: 360h
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    encoding: PKCS8
+    rotationPolicy: Always
+  usages: [client auth]
+  issuerRef:
+    name: arkime-ca
+    kind: Issuer

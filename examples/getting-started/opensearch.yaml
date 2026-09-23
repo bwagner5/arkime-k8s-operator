@@ -1,0 +1,51 @@
+# Matches the pinned OpenSearch operator 2.8.0 API.
+apiVersion: opensearch.opster.io/v1
+kind: OpenSearchCluster
+metadata:
+  name: opensearch
+  namespace: arkime
+spec:
+  general:
+    serviceName: opensearch
+    version: 3.3.2
+    httpPort: 9200
+    setVMMaxMapCount: true
+  dashboards:
+    enable: false
+    replicas: 1
+    version: 3.3.2
+  security:
+    config:
+      adminCredentialsSecret:
+        name: opensearch-admin-credentials
+      securityConfigSecret:
+        name: opensearch-security-config
+      adminSecret:
+        name: opensearch-admin-tls
+    tls:
+      transport:
+        generate: false
+        perNode: false
+        secret:
+          name: opensearch-node-tls
+        nodesDn: [CN=opensearch-node]
+        adminDn: [CN=opensearch-admin]
+      http:
+        generate: false
+        secret:
+          name: opensearch-node-tls
+  nodePools:
+    - component: nodes
+      replicas: 3
+      diskSize: 20Gi
+      roles: [cluster_manager, data, ingest]
+      jvm: -Xms1g -Xmx1g
+      resources:
+        requests:
+          cpu: 500m
+          memory: 2Gi
+        limits:
+          memory: 2Gi
+      persistence:
+        pvc:
+          accessModes: [ReadWriteOnce]

@@ -3,9 +3,6 @@
 import json
 from pathlib import Path
 root = Path(__file__).resolve().parents[1]
-for p in (root/'config/crd/bases').glob('*.yaml'):
-    text = p.read_text().replace('  annotations:\n', '  annotations:\n    helm.sh/resource-policy: keep\n', 1)
-    (root/'charts/arkime-k8s-operator-crds/templates'/p.name).write_text(text)
 p = root/'config/rbac/role.yaml'
 text = p.read_text().replace('  name: arkime-k8s-operator', '  name: {{ include "operator.name" . }}-{{ .Release.Namespace }}')
 (root/'charts/arkime-k8s-operator/templates/role.yaml').write_text(text)

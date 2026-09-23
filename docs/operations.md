@@ -18,6 +18,10 @@ The pinned 6.6.0 → 6.7.0 transition is implemented. Approval is durably record
 
 Managed retention uses one daily `db.pl expire daily <days>` CronJob scoped to the session prefix. `retention.mode: External` removes that Job. Do not independently enable ILM/ISM on the same installation. PCAP disk reserve (`10%` by default) is separate and enforced by local viewers.
 
+## TLS
+
+Use [TLS and private CAs](tls.md) for cert-manager setup, database trust, renewal, and the current limits of internal Arkime TLS. Browser HTTPS termination does not encrypt Gateway-to-viewer or viewer-to-local-viewer traffic.
+
 ## Troubleshooting
 
 `InvalidSpec` identifies inconsistent inputs. `DependencyUnavailable` identifies missing Secret keys or claims. `OwnershipConflict` prevents adoption of unowned resources or known database/host-port overlaps. `BootstrapFailed` links to a finite Job. `Progressing` reports unavailable workloads or exposure. Zero desired DaemonSet pods is not ready. `Degraded` records unconfigured WISE enrichment.

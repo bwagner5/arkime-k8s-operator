@@ -20,7 +20,7 @@ func TestEnvtestStructuralAdmission(t *testing.T) {
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
 		t.Skip("set KUBEBUILDER_ASSETS to run real API admission tests")
 	}
-	env := &envtest.Environment{CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")}, ErrorIfCRDPathMissing: true}
+	env := &envtest.Environment{CRDDirectoryPaths: []string{filepath.Join("..", "..", "charts", "arkime-k8s-operator-crds", "templates")}, ErrorIfCRDPathMissing: true}
 	config, err := env.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestEnvtestApplyDoesNotChangeGeneration(t *testing.T) {
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
 		t.Skip("set KUBEBUILDER_ASSETS")
 	}
-	env := &envtest.Environment{CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")}}
+	env := &envtest.Environment{CRDDirectoryPaths: []string{filepath.Join("..", "..", "charts", "arkime-k8s-operator-crds", "templates")}}
 	config, err := env.Start()
 	if err != nil {
 		t.Fatal(err)
