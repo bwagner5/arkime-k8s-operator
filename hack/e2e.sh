@@ -29,7 +29,7 @@ KO_DOCKER_REPO=ko.local ko build --bare --platform "linux/$(go env GOARCH)" ./cm
 image=$(tail -1 _artifacts/e2e/image)
 kind load docker-image --name "$name" "$image"
 helm upgrade --install arkime-crds _artifacts/helm/arkime-k8s-operator-crds-0.0.0-dev.tgz --kube-context "$context"
-helm upgrade --install arkime _artifacts/helm/arkime-k8s-operator-0.0.0-dev.tgz --kube-context "$context" --namespace arkime-system --create-namespace --set image.repository="${image%:*}" --set image.tag="${image##*:}"
+helm upgrade --install arkime _artifacts/helm/arkime-k8s-operator-0.0.0-dev.tgz --kube-context "$context" --namespace arkime-system --create-namespace --set crds.enabled=false --set image.repository="${image%:*}" --set image.tag="${image##*:}"
 kubectl --context "$context" create namespace arkime
 kubectl --context "$context" -n arkime apply -f test/e2e/database.yaml
 kubectl --context "$context" -n arkime rollout status deployment/opensearch --timeout=300s

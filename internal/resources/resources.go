@@ -25,6 +25,14 @@ func Labels(c *api.ArkimeCluster, k string) map[string]string {
 func Meta(c *api.ArkimeCluster, k string) metav1.ObjectMeta {
 	return metav1.ObjectMeta{Name: cfg.Name(c, k), Namespace: c.Namespace, Labels: Labels(c, k)}
 }
+
+// Arkime reads ARKIME_<section>__<key>; the default section is unnamed, giving ARKIME__<key>.
+func EnvName(section, key string) string {
+	if section != "" {
+		section = "_" + section
+	}
+	return "ARKIME" + section + "__" + key
+}
 func EnvSecret(name string, ref *corev1.SecretKeySelector) corev1.EnvVar {
 	return corev1.EnvVar{Name: name, ValueFrom: &corev1.EnvVarSource{SecretKeyRef: ref}}
 }
@@ -35,10 +43,10 @@ func Credentials(c *api.ArkimeCluster, component string) []corev1.EnvVar {
 	env := []corev1.EnvVar{}
 	add := func(b api.Backend, section, prefix string) {
 		if b.Auth.BasicAuthSecretRef != nil {
-			env = append(env, EnvSecret("ARKIME_"+section+"__"+prefix+"elasticsearchBasicAuth", b.Auth.BasicAuthSecretRef))
+			env = append(env, EnvSecret(EnvName(section, prefix+"elasticsearchBasicAuth"), b.Auth.BasicAuthSecretRef))
 		}
 		if b.Auth.APIKeySecretRef != nil {
-			env = append(env, EnvSecret("ARKIME_"+section+"__"+prefix+"elasticsearchAPIKey", b.Auth.APIKeySecretRef))
+			env = append(env, EnvSecret(EnvName(section, prefix+"elasticsearchAPIKey"), b.Auth.APIKeySecretRef))
 		}
 	}
 	add(c.Spec.Database.Backend, "", "")
@@ -54,7 +62,7 @@ func Credentials(c *api.ArkimeCluster, component string) []corev1.EnvVar {
 	}
 	if component != "capture" {
 		for _, key := range []string{"passwordSecret", "serverSecret"} {
-			env = append(env, EnvSecret("ARKIME__"+key, secretRef(c.Status.SharedSecret, key)))
+			env = append(env, EnvSecret(EnvName("", key), secretRef(c.Status.SharedSecret, key)))
 		}
 	}
 	if component == "cont3xt" {
@@ -64,13 +72,13 @@ func Credentials(c *api.ArkimeCluster, component string) []corev1.EnvVar {
 		}
 		add(b, "cont3xt", "")
 		add(c.Spec.Database.Backend, "arkime:local", "")
-		env = append(env, EnvSecret("ARKIME_cont3xt__passwordSecret", secretRef(c.Status.SharedSecret, "passwordSecret")))
+		env = append(env, EnvSecret(EnvName("cont3xt", "passwordSecret"), secretRef(c.Status.SharedSecret, "passwordSecret")))
 	}
 	if o := c.Spec.Auth.OIDC; o != nil && (component == "viewer" || component == "cont3xt") {
 		env = append(env, EnvSecret("ARKIME__authClientSecret", &o.ClientSecretRef))
 	}
 	for _, r := range cfg.Components(c)[component].ConfigSecretRefs {
-		env = append(env, EnvSecret("ARKIME_"+r.Section+"__"+r.Key, &r.SecretKeyRef))
+		env = append(env, EnvSecret(EnvName(r.Section, r.Key), &r.SecretKeyRef))
 	}
 	return env
 }

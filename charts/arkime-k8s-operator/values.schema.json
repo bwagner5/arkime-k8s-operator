@@ -3,6 +3,15 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "crds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
     "image": {
       "type": "object",
       "additionalProperties": false,

@@ -1,6 +1,8 @@
 # Operator chart values (generated)
 
 ```yaml
+crds:
+  enabled: true
 image:
   repository: ghcr.io/bwagner5/arkime-k8s-operator
   tag: ''

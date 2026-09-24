@@ -10,6 +10,17 @@ spec:
     version: 3.3.2
     httpPort: 9200
     setVMMaxMapCount: true
+  # The bootstrap pod is short-lived but is not covered by nodePools.resources.
+  # Without requests it is BestEffort, so the scheduler ignores its ~760Mi RSS
+  # and the kubelet evicts it first under node memory pressure.
+  bootstrap:
+    jvm: -Xms512m -Xmx512m
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1536Mi
+      limits:
+        memory: 1536Mi
   dashboards:
     enable: false
     replicas: 1

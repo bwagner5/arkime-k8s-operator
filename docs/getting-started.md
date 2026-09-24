@@ -8,7 +8,7 @@ Run commands from the repository root in **Bash**, keeping the same shell for va
 
 ## 1. Prepare Kubernetes
 
-You need `kubectl`, Helm 3+, Go matching `go.mod`, `ko`, Python 3, and access to a container registry your nodes can pull from. The optional local cluster also needs Docker and kind. Use Kubernetes 1.34 or later with Linux worker nodes and a working CNI/DNS. The OpenSearch example needs three 20 GiB PVCs and at least 6 GiB memory for database pods; allow additional capacity for bootstrap, Arkime, and Kubernetes. For the local walkthrough, give Docker about 12 GiB memory and 4 CPUs or more.
+You need `kubectl`, Helm 3+, `htpasswd`, and nodes that can pull from `ghcr.io`. The optional local cluster also needs Docker and kind. Use Kubernetes 1.34 or later with Linux worker nodes and a working CNI/DNS. The OpenSearch example needs three 20 GiB PVCs and at least 6 GiB memory for database pods; allow additional capacity for bootstrap, Arkime, and Kubernetes. For the local walkthrough, give Docker about 12 GiB memory and 4 CPUs or more.
 
 If you already have a cluster, select its context and skip cluster creation. Otherwise create a disposable cluster with two workers:
 
@@ -79,11 +79,14 @@ In step 5, change `database.engine` and `database.endpoints`. Keep hostname veri
 
 This example pins operator/chart **2.8.0** and OpenSearch **3.3.2**. It intentionally uses that release's `opensearch.opster.io/v1` API. Do not mix it with the changed API/security defaults on upstream `main`. See the [versioned operator guide](https://github.com/opensearch-project/opensearch-k8s-operator/blob/v2.8.0/docs/userguide/main.md) and [compatibility matrix](https://github.com/opensearch-project/opensearch-k8s-operator/blob/v2.8.0/README.md#compatibility).
 
+The chart's kube-rbac-proxy sidecar is disabled: its pinned image `gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0` no longer exists in that registry, so the operator Pod never starts. The sidecar only guards the operator's metrics endpoint.
+
 ```sh
 helm repo add opensearch-operator https://opensearch-project.github.io/opensearch-k8s-operator/
 helm repo update
 helm upgrade --install opensearch-operator opensearch-operator/opensearch-operator \
   --version 2.8.0 --namespace opensearch-system --create-namespace \
+  --set kubeRbacProxy.enable=false \
   --wait --timeout 5m
 kubectl apply -f examples/getting-started/opensearch-certificates.yaml
 kubectl -n arkime wait certificate/opensearch-node certificate/opensearch-admin \
@@ -92,22 +95,52 @@ kubectl -n arkime wait certificate/opensearch-node certificate/opensearch-admin 
 
 The certificates cover the database's Service and node DNS names. The node certificate supports server/client authentication; the separate admin certificate is used by the OpenSearch operator to configure security. Arkime uses HTTPS with basic authentication, not the OpenSearch admin certificate.
 
-Create a random database password and the matching security configuration. Operator 2.8.0 needs both the plaintext credential Secret and a bcrypt hash in `internal_users.yml`; setting only the credential Secret is insufficient. The [setup helper](../hack/setup-opensearch.sh) installs its dependencies in a local virtual environment, downloads the release's security template, and applies all three Secrets without printing credentials:
+Operator 2.8.0 wants the database password in three places: the plaintext credential Secret the operator authenticates with, a bcrypt hash inside the security configuration's `internal_users.yml`, and the `username:password` Secret Arkime reads. Setting only the credential Secret is not enough.
+
+Generate a password once and keep it in this shell. Nothing below prints it:
 
 ```sh
-bash hack/setup-opensearch.sh
+DATABASE_PASSWORD="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40)Aa1!"
+```
+
+Hash it with bcrypt. `htpasswd` comes with Apache: macOS has it already, Linux needs `apache2-utils` or `httpd-tools`. The empty username and its separator are stripped, leaving the bare hash:
+
+```sh
+DATABASE_PASSWORD_HASH=$(htpasswd -bnBC 12 "" "$DATABASE_PASSWORD" | cut -d: -f2)
+printf '%s\n' "$DATABASE_PASSWORD_HASH" | cut -c1-7
+```
+
+That prints `$2y$12$`. Anything else means the hash did not get generated; stop and fix it before continuing.
+
+[`opensearch-security-config.yaml`](../examples/getting-started/opensearch-security-config.yaml) is the operator release's security configuration example, trimmed to one `admin` user mapped to `all_access`, with `ADMIN_PASSWORD_HASH` where the hash goes. Substitute the hash and apply it along with the two credential Secrets:
+
+```sh
+sed "s|ADMIN_PASSWORD_HASH|$DATABASE_PASSWORD_HASH|" \
+  examples/getting-started/opensearch-security-config.yaml | kubectl apply -f -
+kubectl -n arkime create secret generic opensearch-admin-credentials \
+  --from-literal=username=admin --from-literal=password="$DATABASE_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n arkime create secret generic arkime-database \
+  --from-literal=basicAuth="admin:$DATABASE_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f -
+unset DATABASE_PASSWORD DATABASE_PASSWORD_HASH
+```
+
+Now create the cluster:
+
+```sh
 kubectl apply -f examples/getting-started/opensearch.yaml
 kubectl -n arkime get opensearchcluster,pods,pvc
 ```
 
-Run the setup helper once for a fresh installation. It grants Arkime database-admin permissions to make this first installation self-contained. Before a shared/production deployment, replace these with scoped runtime credentials and separate `database.bootstrapAuth`; do not reuse this admin account across installations.
+Do this once, for a fresh installation. The single `admin` account gives Arkime database-admin permissions so this first installation is self-contained. Before a shared/production deployment, replace it with scoped runtime credentials and a separate `database.bootstrapAuth`; do not reuse this admin account across installations.
 
-Wait for the StatefulSet to appear, then for all three replicas:
+Wait for the StatefulSet to appear, then for all three replicas. The operator sets `updateStrategy: OnDelete`, which `kubectl rollout status` refuses, so poll `readyReplicas` instead. Each replica may land on its own node, so allow several minutes per pod:
 
 ```sh
 until kubectl -n arkime get statefulset/opensearch-nodes >/dev/null 2>&1; do sleep 5; done
-kubectl -n arkime rollout status statefulset/opensearch-nodes --timeout=15m
-kubectl -n arkime get jobs
+until [ "$(kubectl -n arkime get statefulset/opensearch-nodes -o jsonpath='{.status.readyReplicas}')" = 3 ]; do sleep 15; done
+kubectl -n arkime get pods,jobs
 ```
 
 Verify TLS, authentication, and cluster health before installing Arkime. In a second terminal:
@@ -133,37 +166,17 @@ rm _artifacts/getting-started/database.curl
 
 Expect three nodes, `timed_out: false`, and green or yellow status. A TLS error, HTTP 401, or red cluster is a stop point: inspect OpenSearch pods and its security-config Job before proceeding. No `curl -k` is needed. Stop the database port-forward when done.
 
-## 4. Build and install the Arkime operator
+## 4. Install the Arkime operator
 
-Generate the CRDs and build from this checkout:
-
-```sh
-make generate
-```
-
-For an existing cluster, publish to a registry you control (authenticate using your registry tooling first):
+One published OCI chart installs the CRD and the controller; it already points at the matching controller image.
 
 ```sh
-export KO_DOCKER_REPO=ghcr.io/YOUR_ACCOUNT/arkime-k8s-operator
-OPERATOR_IMAGE=$(ko build --bare --platform=linux/amd64,linux/arm64 ./cmd/manager)
-helm upgrade --install arkime-crds ./charts/arkime-k8s-operator-crds
-helm upgrade --install arkime ./charts/arkime-k8s-operator \
-  --namespace arkime-system --create-namespace \
-  --set image.repository="${OPERATOR_IMAGE%@*}" \
-  --set image.digest="${OPERATOR_IMAGE#*@}" --wait --timeout 5m
+helm upgrade --install arkime \
+  oci://ghcr.io/bwagner5/arkime-k8s-operator/helm-charts/arkime-k8s-operator \
+  --version 0.1.0 --namespace arkime-system --create-namespace --wait --timeout 5m
 ```
 
-For the optional kind cluster, use this local-image branch **instead** of the registry branch:
-
-```sh
-OPERATOR_IMAGE=$(KO_DOCKER_REPO=ko.local ko build --bare --platform="linux/$(go env GOARCH)" ./cmd/manager)
-kind load docker-image --name arkime-demo "$OPERATOR_IMAGE"
-helm upgrade --install arkime-crds ./charts/arkime-k8s-operator-crds
-helm upgrade --install arkime ./charts/arkime-k8s-operator \
-  --namespace arkime-system --create-namespace \
-  --set image.repository="${OPERATOR_IMAGE%:*}" \
-  --set image.tag="${OPERATOR_IMAGE##*:}" --wait --timeout 5m
-```
+To manage the CRD on its own upgrade cadence instead, install the `arkime-k8s-operator-crds` chart first and add `--set crds.enabled=false` here. To run a build from this checkout, see [releasing](releasing.md).
 
 ## 5. Select capture nodes and apply Arkime
 

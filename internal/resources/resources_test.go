@@ -3,6 +3,7 @@ package resources
 import (
 	api "github.com/bwagner5/arkime-k8s-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"testing"
 )
@@ -55,5 +56,20 @@ func TestExternalCaptureNeedsNoCapabilities(t *testing.T) {
 	}
 	if capture.Lifecycle != nil {
 		t.Fatal("capture must receive SIGTERM directly")
+	}
+}
+
+func TestCredentialsEnvNames(t *testing.T) {
+	ref := &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "arkime-database"}, Key: "basicAuth"}
+	c := &api.ArkimeCluster{Spec: api.ArkimeClusterSpec{Database: api.DatabaseSpec{Backend: api.Backend{Auth: api.DatabaseAuth{BasicAuthSecretRef: ref}}}}}
+	got := map[string]bool{}
+	for _, e := range Credentials(c, "viewer") {
+		got[e.Name] = true
+	}
+	// bootstrap.js reads these exact names; a third underscore silently drops the auth header.
+	for _, want := range []string{"ARKIME__elasticsearchBasicAuth", "ARKIME__usersElasticsearchBasicAuth"} {
+		if !got[want] {
+			t.Errorf("missing %s, got %v", want, got)
+		}
 	}
 }

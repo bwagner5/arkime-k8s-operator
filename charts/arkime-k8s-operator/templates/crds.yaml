@@ -1,0 +1,3 @@
+{{- if .Values.crds.enabled }}
+{{ .Files.Get "files/arkime.arkime.com_arkimeclusters.yaml" }}
+{{- end }}

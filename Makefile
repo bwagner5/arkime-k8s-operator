@@ -17,7 +17,7 @@ help: ## Show contributor commands (overrides: VERSION, KUBE_CONTEXT, OCI_REPOSI
 generate: ## Generate deepcopy, CRDs, RBAC and reference docs.
 	$(CONTROLLER_GEN) object crd paths=./api/v1alpha1 output:crd:artifacts:config=charts/arkime-k8s-operator-crds/templates
 	$(CONTROLLER_GEN) rbac:roleName=arkime-k8s-operator paths=./... output:rbac:artifacts:config=config/rbac
-	python3 hack/generate.py
+	bash hack/generate.sh
 fmt: ## Format Go and tidy both modules.
 	gofmt -w api cmd internal
 	$(GO) mod tidy
@@ -30,6 +30,7 @@ verify: ## Check formatting, vet, generated drift, charts and release configurat
 	$(MAKE) verify-generated
 	$(HELM) lint charts/arkime-k8s-operator charts/arkime-k8s-operator-crds
 	$(HELM) template arkime charts/arkime-k8s-operator >/dev/null
+	$(HELM) template arkime charts/arkime-k8s-operator --set crds.enabled=false >/dev/null
 	$(HELM) template arkime-crds charts/arkime-k8s-operator-crds >/dev/null
 	goreleaser check
 run: ## Run against an explicitly selected kubeconfig context.
@@ -54,8 +55,8 @@ package-charts:
 	$(HELM) package charts/arkime-k8s-operator-crds --version "$(VERSION)" --app-version "$(VERSION)" -d _artifacts/helm
 	$(HELM) package charts/arkime-k8s-operator --version "$(VERSION)" --app-version "$(VERSION)" -d _artifacts/helm
 	$(HELM) template arkime-crds "_artifacts/helm/arkime-k8s-operator-crds-$(VERSION).tgz" >_artifacts/crds.yaml
-	python3 -c 'from pathlib import Path; Path("_artifacts/operator.yaml").write_text("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: arkime-system\n---\n")'
-	$(HELM) template arkime "_artifacts/helm/arkime-k8s-operator-$(VERSION).tgz" --namespace arkime-system >>_artifacts/operator.yaml
+	printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: arkime-system\n---\n' >_artifacts/operator.yaml
+	$(HELM) template arkime "_artifacts/helm/arkime-k8s-operator-$(VERSION).tgz" --namespace arkime-system --set crds.enabled=false >>_artifacts/operator.yaml
 ci-verify:
 	$(MAKE) verify
 	$(MAKE) test
