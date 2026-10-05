@@ -1,0 +1,106 @@
+# Standalone WISE example. Apply kubernetes-enrichment-rbac.yaml first.
+# Replace both image references with qualified versions/digests.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wise-pod-enrichment
+  namespace: arkime
+data:
+  config.ini: |
+    [wiseService]
+    port=8081
+    wiseHost=0.0.0.0
+    [file:kubernetes-pods]
+    file=/var/run/arkime-kubernetes/pods.tagger
+    type=ip
+    format=tagger
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wise-pod-enrichment
+  namespace: arkime
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: wise-pod-enrichment}
+  template:
+    metadata:
+      labels: {app: wise-pod-enrichment}
+    spec:
+      serviceAccountName: arkime-pod-enricher
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 65534
+        runAsUser: 65534
+        runAsGroup: 65534
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: pod-enricher
+          restartPolicy: Always
+          image: ghcr.io/bwagner5/arkime-pod-enricher:RELEASE_VERSION
+          args: ["--cluster-name=home"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          startupProbe:
+            httpGet: {path: /readyz, port: 8082}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8082}
+          livenessProbe:
+            httpGet: {path: /livez, port: 8082}
+          volumeMounts:
+            - {name: inventory, mountPath: /var/run/arkime-kubernetes}
+            - {name: api, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
+      containers:
+        - name: wise
+          image: ghcr.io/arkime/arkime:QUALIFIED_VERSION
+          workingDir: /opt/arkime/wiseService
+          command: [/opt/arkime/bin/node, /opt/arkime/wiseService/wiseService.js]
+          args: [-c, /etc/arkime/config.ini]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            tcpSocket: {port: 8081}
+          volumeMounts:
+            - {name: config, mountPath: /etc/arkime, readOnly: true}
+            - {name: inventory, mountPath: /var/run/arkime-kubernetes, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: config
+          configMap: {name: wise-pod-enrichment}
+        - name: inventory
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: api
+          projected:
+            sources:
+              - serviceAccountToken: {path: token, expirationSeconds: 3600}
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{key: ca.crt, path: ca.crt}]
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef: {apiVersion: v1, fieldPath: metadata.namespace}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wise-pod-enrichment
+  namespace: arkime
+spec:
+  selector: {app: wise-pod-enrichment}
+  publishNotReadyAddresses: true
+  ports:
+    - {name: wise, port: 8081, targetPort: 8081}

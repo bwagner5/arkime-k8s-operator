@@ -4,6 +4,7 @@ import (
 	"context"
 	api "github.com/bwagner5/arkime-k8s-operator/api/v1alpha1"
 	cfg "github.com/bwagner5/arkime-k8s-operator/internal/config"
+	res "github.com/bwagner5/arkime-k8s-operator/internal/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,6 +15,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"strings"
 	"testing"
 )
 
@@ -61,8 +63,10 @@ func TestBootstrapGatesWritersAndSurvivesJobDeletion(t *testing.T) {
 	if len(deployments.Items) != 4 {
 		t.Fatalf("wanted 4 deployments, got %d", len(deployments.Items))
 	}
-	if err := r.Delete(ctx, job); err != nil {
-		t.Fatal(err)
+	// Success is persisted in status, so the operator reclaims the completed Job.
+	_ = r.List(ctx, jobs)
+	if len(jobs.Items) != 0 {
+		t.Fatalf("completed Job not pruned: %#v", jobs.Items)
 	}
 	reconcile()
 	_ = r.List(ctx, jobs)
@@ -75,6 +79,50 @@ func TestBootstrapGatesWritersAndSurvivesJobDeletion(t *testing.T) {
 		if len(s.OwnerReferences) != 0 {
 			t.Fatal("recovery secret would be garbage collected")
 		}
+	}
+}
+func TestRetryTokenPrunesSupersededBootstrapJob(t *testing.T) {
+	ctx := context.Background()
+	c := testCluster()
+	r := setup(t, c, &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "data", Namespace: "test"}})
+	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(c)}
+	reconcile := func() {
+		t.Helper()
+		if _, err := r.Reconcile(ctx, req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reconcile()
+	jobs := &batchv1.JobList{}
+	_ = r.List(ctx, jobs)
+	if len(jobs.Items) != 1 {
+		t.Fatalf("wanted one bootstrap Job: %#v", jobs.Items)
+	}
+	failed := jobs.Items[0]
+	failed.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue}}
+	if err := r.Status().Update(ctx, &failed); err != nil {
+		t.Fatal(err)
+	}
+	// A failure is retained for inspection; the status message points operators at it.
+	reconcile()
+	_ = r.List(ctx, jobs)
+	if len(jobs.Items) != 1 || jobs.Items[0].Name != failed.Name {
+		t.Fatalf("failed Job not retained for inspection: %#v", jobs.Items)
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(c), c); err != nil {
+		t.Fatal(err)
+	}
+	c.Spec.Database.Schema.RetryToken = "retry-1"
+	if err := r.Update(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	reconcile()
+	_ = r.List(ctx, jobs)
+	if len(jobs.Items) != 1 {
+		t.Fatalf("superseded Job not pruned: %#v", jobs.Items)
+	}
+	if jobs.Items[0].Name == failed.Name {
+		t.Fatal("retry reused the failed Job name")
 	}
 }
 func TestRefusesUnownedObject(t *testing.T) {
@@ -158,5 +206,83 @@ func TestRouteParentMatching(t *testing.T) {
 				t.Fatalf("matched=%v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func nodeCluster() *api.ArkimeCluster {
+	c := testCluster()
+	c.Spec.Capture = api.CaptureSpec{Node: &api.NodeCapture{Interfaces: []string{"eth0"}, Storage: api.HostStorage{HostPath: "/var/lib/arkime-pcap"}, ViewerPort: 8005}}
+	return c
+}
+func TestCaptureFaultsSurfaceOnStatus(t *testing.T) {
+	ctx := context.Background()
+	c := nodeCluster()
+	r := setup(t, c)
+	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(c)}
+	reconcile := func() {
+		t.Helper()
+		if _, err := r.Reconcile(ctx, req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reconcile()
+	jobs := &batchv1.JobList{}
+	_ = r.List(ctx, jobs)
+	if len(jobs.Items) != 1 {
+		t.Fatalf("wanted one bootstrap Job: %#v", jobs.Items)
+	}
+	job := &jobs.Items[0]
+	job.Status.Succeeded = 1
+	if err := r.Status().Update(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	reconcile()
+	reconcile()
+	ds := &appsv1.DaemonSet{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "test", Name: cfg.Name(c, "node")}, ds); err != nil {
+		t.Fatal(err)
+	}
+	reasonOf := func(typ string) (string, string) {
+		t.Helper()
+		if err := r.Get(ctx, client.ObjectKeyFromObject(c), c); err != nil {
+			t.Fatal(err)
+		}
+		for _, cond := range c.Status.Conditions {
+			if cond.Type == typ {
+				return cond.Reason, cond.Message
+			}
+		}
+		t.Fatalf("no %s condition", typ)
+		return "", ""
+	}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "node-abc", Namespace: "test", Labels: res.Labels(c, "node")}, Spec: corev1.PodSpec{NodeName: "worker-1"}}
+	if err := r.Create(ctx, pod); err != nil {
+		t.Fatal(err)
+	}
+	pod.Status = corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{Name: "capture", LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Message: "vvvvvvv IMPORTANT vvvvvvv\nFATAL CONFIG ERROR - Error setting PROMISC: No such device\n^^^^^^^ IMPORTANT ^^^^^^^\n"}}}}}
+	if err := r.Status().Update(ctx, pod); err != nil {
+		t.Fatal(err)
+	}
+	reconcile()
+	for _, typ := range []string{"NodeReady", "CaptureReady"} {
+		reason, message := reasonOf(typ)
+		if reason != "InterfaceUnavailable" {
+			t.Fatalf("%s reason = %q, want InterfaceUnavailable (%s)", typ, reason, message)
+		}
+		if !strings.Contains(message, "worker-1") || !strings.Contains(message, "eth0") || strings.Contains(message, "vvv") {
+			t.Fatalf("%s message = %q", typ, message)
+		}
+	}
+	if reason, message := reasonOf("Ready"); reason != "Progressing" || !strings.Contains(message, "No such device") {
+		t.Fatalf("Ready = %q / %q; fault not surfaced", reason, message)
+	}
+	// An unplaceable Pod is the other invisible failure; a container fault outranks it.
+	pod.Status = corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: corev1.PodReasonUnschedulable, Message: "0/3 nodes are available: 3 Insufficient memory."}}}
+	if err := r.Status().Update(ctx, pod); err != nil {
+		t.Fatal(err)
+	}
+	reconcile()
+	if reason, message := reasonOf("CaptureReady"); reason != "Unschedulable" || !strings.Contains(message, "Insufficient memory") {
+		t.Fatalf("CaptureReady = %q / %q, want Unschedulable", reason, message)
 	}
 }

@@ -1,0 +1,19 @@
+# Merge this spec fragment into an ArkimeCluster after provisioning the RBAC
+# example and qualifying your Arkime image. Replace the image tag/digest.
+spec:
+  wise:
+    enabled: true
+  enrichment:
+    kubernetes:
+      enabled: true
+      clusterName: home
+      image: ghcr.io/bwagner5/arkime-pod-enricher:RELEASE_VERSION
+      serviceAccountName: arkime-pod-enricher
+      captureCacheSeconds: 5
+      maxStaleSeconds: 60
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          memory: 256Mi

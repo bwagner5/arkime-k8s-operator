@@ -11,3 +11,5 @@ make test
 make verify
 make test-e2e
 ```
+
+See [Kubernetes pod enrichment](docs/kubernetes-pod-enrichment.md) for the optional live endpoint metadata sidecar and its runtime qualification requirements.

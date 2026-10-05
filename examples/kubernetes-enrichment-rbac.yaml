@@ -1,0 +1,30 @@
+# Administrator-owned: the Operator never creates or deletes cluster-wide grants.
+# Use a distinct ServiceAccount/binding for each enrichment domain.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: arkime-pod-enricher
+  namespace: arkime
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: arkime-pod-enricher
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: arkime-pod-enricher-arkime
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: arkime-pod-enricher
+subjects:
+  - kind: ServiceAccount
+    name: arkime-pod-enricher
+    namespace: arkime

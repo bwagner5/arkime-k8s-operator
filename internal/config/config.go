@@ -79,6 +79,9 @@ func Backends(c *api.ArkimeCluster) map[string]api.Backend {
 	return m
 }
 func Validate(c *api.ArkimeCluster) error {
+	if err := validateEnrichment(c); err != nil {
+		return err
+	}
 	if c.Spec.Database.TLS.ClientCertificateSecret != "" && api.Enabled(c.Spec.Cont3xt.ComponentSpec) {
 		return fmt.Errorf("Cont3xt Arkime integration does not support database mTLS; disable Cont3xt")
 	}
@@ -378,6 +381,7 @@ func Sections(c *api.ArkimeCluster, component string) map[string]map[string]stri
 		s["wiseService"]["port"] = "8081"
 		s["wiseService"]["wiseHost"] = "0.0.0.0"
 	}
+	enrichmentSections(c, component, s)
 	return s
 }
 func clone(m map[string]string) map[string]string {

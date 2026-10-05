@@ -153,6 +153,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err = r.apply(ctx, c, sa, false); err != nil {
 		return ctrl.Result{}, err
 	}
+	if api.KubernetesEnrichment(c) && c.Spec.NetworkPolicy != nil {
+		if err = r.apply(ctx, c, res.EnrichmentNetworkPolicy(c), false); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else {
+		if err = r.remove(ctx, c, &networkingv1.NetworkPolicy{ObjectMeta: res.Meta(c, "enrichment")}); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	if c.Spec.NetworkPolicy != nil {
 		if err = r.apply(ctx, c, res.NetworkPolicy(c), false); err != nil {
 			return ctrl.Result{}, err
@@ -190,6 +199,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			if err = r.apply(ctx, c, job, false); err != nil {
 				return ctrl.Result{}, err
 			}
+			if err = r.pruneBootstrap(ctx, c, job.Name); err != nil {
+				return ctrl.Result{}, err
+			}
 			condition(c, "SchemaReady", false, "Initializing", "waiting for guarded schema/admin Job")
 			return finish("Initializing", "schema and admin Job is running", 5*time.Second)
 		}
@@ -201,7 +213,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 		for _, jc := range current.Status.Conditions {
 			if jc.Type == batchv1.JobFailed && jc.Status == corev1.ConditionTrue {
-				condition(c, "SchemaReady", false, "JobFailed", "inspect Job "+job.Name+"; correct cause and change schema.retryToken")
+				condition(c, "SchemaReady", false, "JobFailed", "inspect Job "+job.Name+"; correct cause and change spec.database.schema.retryToken")
 				return finish("BootstrapFailed", "inspect Job "+job.Name, 30*time.Second)
 			}
 		}
@@ -218,6 +230,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return finish("Progressing", "schema complete; creating applications", time.Second)
 	}
 	condition(c, "SchemaReady", true, "Completed", "schema/admin operation recorded")
+	if err = r.pruneBootstrap(ctx, c, ""); err != nil {
+		return ctrl.Result{}, err
+	}
 	if e := c.Spec.Capture.External; e != nil {
 		if e.Storage.VolumeClaim != nil {
 			if err = r.apply(ctx, c, res.PVC(c), true); err != nil {
@@ -284,6 +299,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	condition(c, "ExposureReady", exposed, "Observed", message)
 	ready := exposed
 	captureReady := true
+	if !api.KubernetesEnrichment(c) {
+		condition(c, "EnrichmentReady", true, "Disabled", "Kubernetes enrichment is disabled")
+	}
+	captureReason, captureMessage := "WorkloadObserved", "capture and retained-viewer workloads observed"
 	for k := range cfg.Components(c) {
 		ok := false
 		if k == "node" {
@@ -302,14 +321,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			ok = d.Status.ObservedGeneration >= d.Generation && d.Status.AvailableReplicas > 0 && d.Status.UpdatedReplicas == 1
 		}
 		typ := strings.ToUpper(k[:1]) + k[1:] + "Ready"
-		condition(c, typ, ok, "WorkloadObserved", "workload availability; does not assert packet arrival")
+		reason, message := "WorkloadObserved", "workload availability; does not assert packet arrival"
+		if !ok && (k == "node" || k == "external") {
+			if fr, fm := r.captureFault(ctx, c, k); fr != "" {
+				reason, message = fr, fm
+				captureReason, captureMessage = fr, fm
+			}
+		}
+		condition(c, typ, ok, reason, message)
+		if k == "wise" && api.KubernetesEnrichment(c) {
+			condition(c, "EnrichmentReady", ok, "WatcherAndWISEObserved", "WISE availability includes synchronized watcher readiness")
+		}
 		ready = ready && ok
 		if k == "node" || k == "external" {
 			captureReady = captureReady && ok
 		}
 	}
-	condition(c, "CaptureReady", captureReady, "WorkloadObserved", "capture and retained-viewer workloads observed")
-	condition(c, "Degraded", api.Enabled(c.Spec.Wise) && len(c.Spec.Wise.Config) == 0, "EnrichmentConfiguration", "WISE requires configured sources to enrich sessions")
+	condition(c, "CaptureReady", captureReady, captureReason, captureMessage)
+	condition(c, "Degraded", api.Enabled(c.Spec.Wise) && !api.KubernetesEnrichment(c) && len(c.Spec.Wise.Config) == 0, "EnrichmentConfiguration", "WISE requires configured sources to enrich sessions")
 	c.Status.Endpoints = map[string]string{"viewer": cfg.ViewerURL(c)}
 	if e := c.Spec.Capture.External; e != nil {
 		addresses := []string{}
@@ -355,7 +384,70 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if ready {
 		return finish("Available", "requested workloads and exposure are ready", 30*time.Second)
 	}
+	if !captureReady && captureReason != "WorkloadObserved" {
+		return finish("Progressing", captureMessage, 10*time.Second)
+	}
 	return finish("Progressing", "waiting for workload availability and exposure", 10*time.Second)
+}
+
+// A capture container that never reaches Running is indistinguishable from a slow
+// rollout in the DaemonSet counts alone, and the usual causes -- an interface name
+// that does not exist on the node, or a Pod that cannot be placed -- are only
+// visible on the Pods. Report the first fault so the cause lands on the status
+// instead of a permanent Progressing.
+func (r *Reconciler) captureFault(ctx context.Context, c *api.ArkimeCluster, k string) (string, string) {
+	pods := &corev1.PodList{}
+	if err := r.List(ctx, pods, client.InNamespace(c.Namespace), client.MatchingLabels(res.Labels(c, k))); err != nil {
+		return "", ""
+	}
+	sort.Slice(pods.Items, func(i, j int) bool { return pods.Items[i].Name < pods.Items[j].Name })
+	for i := range pods.Items {
+		p := &pods.Items[i]
+		for _, cs := range p.Status.ContainerStatuses {
+			if cs.Name != "capture" {
+				continue
+			}
+			t := cs.LastTerminationState.Terminated
+			if t == nil {
+				t = cs.State.Terminated
+			}
+			if t == nil || t.ExitCode == 0 {
+				continue
+			}
+			detail := truncate(t.Message)
+			if strings.Contains(t.Message, "No such device") && c.Spec.Capture.Node != nil {
+				return "InterfaceUnavailable", fmt.Sprintf("capture in %s: an interface in spec.capture.node.interfaces %v does not exist on node %s: %s", p.Name, c.Spec.Capture.Node.Interfaces, p.Spec.NodeName, detail)
+			}
+			return "CaptureFailed", fmt.Sprintf("capture in %s exited %d: %s", p.Name, t.ExitCode, detail)
+		}
+	}
+	for i := range pods.Items {
+		p := &pods.Items[i]
+		for _, pc := range p.Status.Conditions {
+			if pc.Type == corev1.PodScheduled && pc.Status == corev1.ConditionFalse && pc.Reason == corev1.PodReasonUnschedulable {
+				return "Unschedulable", fmt.Sprintf("%s cannot be scheduled: %s", p.Name, truncate(pc.Message))
+			}
+		}
+	}
+	return "", ""
+}
+
+// Arkime brackets a fatal error with rows of v/^; they carry nothing and would
+// eat the message budget.
+func truncate(s string) string {
+	kept := []string{}
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "vvv") || strings.HasPrefix(line, "^^^") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	s = strings.Join(kept, "; ")
+	if len(s) > 400 {
+		s = s[:400] + "..."
+	}
+	return s
 }
 func (r *Reconciler) apply(ctx context.Context, c *api.ArkimeCluster, obj client.Object, retain bool) error {
 	if !retain {
@@ -416,14 +508,35 @@ func (r *Reconciler) apply(ctx context.Context, c *api.ArkimeCluster, obj client
 	obj.GetObjectKind().SetGroupVersionKind(gvk)
 	return r.Patch(ctx, obj, client.Apply, client.FieldOwner("arkime-k8s-operator"), client.ForceOwnership)
 }
-func (r *Reconciler) remove(ctx context.Context, c *api.ArkimeCluster, obj client.Object) error {
+
+// Bootstrap Jobs are content-addressed, so every retryToken mints a new name and
+// nothing reclaims the old one. Keep is retained so a failure stays inspectable;
+// "" prunes all, which is only safe once CompletedOperation is persisted.
+func (r *Reconciler) pruneBootstrap(ctx context.Context, c *api.ArkimeCluster, keep string) error {
+	jobs := &batchv1.JobList{}
+	if err := r.List(ctx, jobs, client.InNamespace(c.Namespace), client.MatchingLabels{"app.kubernetes.io/managed-by": "arkime-k8s-operator", "arkime.arkime.com/cluster": cfg.ID(c)}); err != nil {
+		return err
+	}
+	prefix := cfg.Name(c, "schema-")
+	for i := range jobs.Items {
+		j := &jobs.Items[i]
+		if j.Name == keep || !strings.HasPrefix(j.Name, prefix) || !metav1.IsControlledBy(j, c) {
+			continue
+		}
+		if err := r.remove(ctx, c, j, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func (r *Reconciler) remove(ctx context.Context, c *api.ArkimeCluster, obj client.Object, opts ...client.DeleteOption) error {
 	if err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
 		return client.IgnoreNotFound(err)
 	}
 	if !metav1.IsControlledBy(obj, c) {
 		return fmt.Errorf("refusing to delete unowned %s", obj.GetName())
 	}
-	return client.IgnoreNotFound(r.Delete(ctx, obj))
+	return client.IgnoreNotFound(r.Delete(ctx, obj, opts...))
 }
 func randomSecret() (string, error) {
 	b := make([]byte, 32)

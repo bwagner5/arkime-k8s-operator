@@ -34,9 +34,16 @@ jobs:
       - run: make release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Verify published artifacts; leave release draft for qualification
+      - name: Verify published artifacts
         run: |
           version="${GITHUB_REF_NAME#v}"
           docker buildx imagetools inspect "ghcr.io/bwagner5/arkime-k8s-operator:$version"
+          docker buildx imagetools inspect "ghcr.io/bwagner5/arkime-pod-enricher:$version"
           helm show chart oci://ghcr.io/bwagner5/arkime-k8s-operator/helm-charts/arkime-k8s-operator --version "$version"
           helm show chart oci://ghcr.io/bwagner5/arkime-k8s-operator/helm-charts/arkime-k8s-operator-crds --version "$version"
+      # GoReleaser drafts the release so a failed verification above leaves nothing public;
+      # publishing is what attaches it to the tag.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"

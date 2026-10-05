@@ -154,6 +154,10 @@ func container(c *api.ArkimeCluster, k string, port int32) corev1.Container {
 	if k == "viewer" {
 		ct.Args = append(ct.Args, "-n", cfg.ID(c)+"-viewer")
 	}
+	// Arkime reports fatal config errors (a missing capture interface, most often)
+	// only on stdout; this lifts the tail of that log into the container status so
+	// the controller can put the cause on the ArkimeCluster.
+	ct.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 	ct.Lifecycle = &corev1.Lifecycle{PreStop: &corev1.LifecycleHandler{Exec: &corev1.ExecAction{Command: []string{"/bin/sh", "-ec", "kill -INT 1"}}}}
 	ct.StartupProbe = &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(port)}}, PeriodSeconds: 5, FailureThreshold: 60}
 	ct.ReadinessProbe = ct.StartupProbe.DeepCopy()
@@ -169,7 +173,7 @@ func Service(c *api.ArkimeCluster, k string, port int32, protocol corev1.Protoco
 	if k == "udp" || k == "local-viewer" {
 		component = "external"
 	}
-	return &corev1.Service{ObjectMeta: Meta(c, k), Spec: corev1.ServiceSpec{Selector: Labels(c, component), Ports: []corev1.ServicePort{{Name: map[bool]string{true: "tzsp", false: "http"}[protocol == corev1.ProtocolUDP], Port: port, TargetPort: intstr.FromInt32(port), Protocol: protocol}}}}
+	return &corev1.Service{ObjectMeta: Meta(c, k), Spec: corev1.ServiceSpec{PublishNotReadyAddresses: k == "wise" && api.KubernetesEnrichment(c), Selector: Labels(c, component), Ports: []corev1.ServicePort{{Name: map[bool]string{true: "tzsp", false: "http"}[protocol == corev1.ProtocolUDP], Port: port, TargetPort: intstr.FromInt32(port), Protocol: protocol}}}}
 }
 func Workload(c *api.ArkimeCluster, k, digest string) client.Object {
 	p := pod(c, k, digest)
@@ -184,6 +188,9 @@ func Workload(c *api.ArkimeCluster, k, digest string) client.Object {
 		port = 3218
 	}
 	ct := container(c, k, port)
+	if k == "wise" && api.KubernetesEnrichment(c) {
+		enrichWise(c, &p, &ct)
+	}
 	if k == "node" || k == "external" {
 		ct.Name = "local-viewer"
 		identity := cfg.ID(c) + "-external"
@@ -300,7 +307,9 @@ func Bootstrap(c *api.ArkimeCluster, operation string) *batchv1.Job {
 	}
 	p.Spec.Containers = []corev1.Container{ct}
 	m := Meta(c, "schema-"+operation[:8])
-	return &batchv1.Job{ObjectMeta: m, Spec: batchv1.JobSpec{BackoffLimit: Ptr(int32(0)), ActiveDeadlineSeconds: Ptr(int64(600)), Template: p}}
+	// Retried: bootstrap.js refuses a partial schema (existing indices without a
+	// current template), so a retry either resumes cleanly or aborts loudly.
+	return &batchv1.Job{ObjectMeta: m, Spec: batchv1.JobSpec{BackoffLimit: Ptr(int32(2)), ActiveDeadlineSeconds: Ptr(int64(600)), Template: p}}
 }
 func Retention(c *api.ArkimeCluster) *batchv1.CronJob {
 	p := pod(c, "viewer", "")

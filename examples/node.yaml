@@ -14,7 +14,7 @@ spec:
   capture:
     node:
       enabled: true
-      interfaces: [eno1]
+      interfaces: [enp0s8]
       storage:
         hostPath: /var/lib/arkime-pcap
   retention:

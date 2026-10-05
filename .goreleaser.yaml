@@ -14,8 +14,23 @@ builds:
     mod_timestamp: '{{ .CommitTimestamp }}'
     goos: [linux]
     goarch: [amd64, arm64]
+  - id: pod-enricher
+    main: ./cmd/pod-enricher
+    binary: pod-enricher
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    goos: [linux]
+    goarch: [amd64, arm64]
 kos:
-  - build: manager
+  - id: pod-enricher
+    build: pod-enricher
+    base_image: cgr.dev/chainguard/static@sha256:bf639cba19ba56329e6907ac26a7afcdde57a80b6aa66d5100da6883196e6b82
+    repositories: [ghcr.io/bwagner5/arkime-pod-enricher]
+    platforms: [linux/amd64, linux/arm64]
+    tags: ['{{ .Version }}']
+    bare: true
+  - id: manager
+    build: manager
     base_image: cgr.dev/chainguard/static@sha256:bf639cba19ba56329e6907ac26a7afcdde57a80b6aa66d5100da6883196e6b82
     repositories: [ghcr.io/bwagner5/arkime-k8s-operator]
     platforms: [linux/amd64, linux/arm64]

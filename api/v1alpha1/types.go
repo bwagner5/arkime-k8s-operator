@@ -41,7 +41,9 @@ type ArkimeClusterList struct {
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.capture.node) || has(self.capture.node)",message="retain the node block and disable capture with enabled:false"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.capture.external) || has(self.capture.external)",message="retain the external block and disable capture with enabled:false"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.database.indexPrefix) || (has(self.database.indexPrefix) && self.database.indexPrefix == oldSelf.database.indexPrefix)",message="index prefix is immutable"
+// +kubebuilder:validation:XValidation:rule="!has(self.enrichment) || !has(self.enrichment.kubernetes) || !has(self.enrichment.kubernetes.enabled) || !self.enrichment.kubernetes.enabled || !has(self.wise) || !has(self.wise.enabled) || self.wise.enabled",message="Kubernetes enrichment requires WISE"
 type ArkimeClusterSpec struct {
+	Enrichment    EnrichmentSpec     `json:"enrichment,omitempty"`
 	NetworkPolicy *NetworkPolicySpec `json:"networkPolicy,omitempty"`
 	Version       string             `json:"version,omitempty"`
 	Image         ImageSpec          `json:"image,omitempty"`
@@ -242,4 +244,32 @@ func Enabled(c ComponentSpec) bool { return c.Enabled == nil || *c.Enabled }
 type NetworkPolicySpec struct {
 	Ingress []networkingv1.NetworkPolicyIngressRule `json:"ingress,omitempty"`
 	Egress  []networkingv1.NetworkPolicyEgressRule  `json:"egress,omitempty"`
+}
+
+// EnrichmentSpec configures optional live endpoint metadata.
+type EnrichmentSpec struct {
+	Kubernetes *KubernetesEnrichmentSpec `json:"kubernetes,omitempty"`
+}
+type KubernetesEnrichmentSpec struct {
+	Enabled     bool   `json:"enabled,omitempty"`
+	ClusterName string `json:"clusterName"`
+	// Image is the separately released pod-enricher image, preferably pinned by digest.
+	Image string `json:"image"`
+	// ServiceAccountName is a dedicated administrator-provisioned account with Pod get/list/watch.
+	ServiceAccountName string                      `json:"serviceAccountName"`
+	Resources          corev1.ResourceRequirements `json:"resources,omitempty"`
+	// +kubebuilder:default=5
+	// +kubebuilder:validation:Minimum=1
+	CaptureCacheSeconds int32 `json:"captureCacheSeconds,omitempty"`
+	// +kubebuilder:default=60
+	// +kubebuilder:validation:Minimum=10
+	MaxStaleSeconds int32 `json:"maxStaleSeconds,omitempty"`
+	// APIEgress must cover the actual API endpoint after service translation.
+	APIEgress []networkingv1.NetworkPolicyEgressRule `json:"apiEgress,omitempty"`
+	// CaptureIngress permits host-network capture nodes to reach WISE.
+	CaptureIngress []networkingv1.NetworkPolicyIngressRule `json:"captureIngress,omitempty"`
+}
+
+func KubernetesEnrichment(c *ArkimeCluster) bool {
+	return c.Spec.Enrichment.Kubernetes != nil && c.Spec.Enrichment.Kubernetes.Enabled
 }
