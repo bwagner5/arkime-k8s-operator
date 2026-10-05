@@ -41,9 +41,7 @@ type ArkimeClusterList struct {
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.capture.node) || has(self.capture.node)",message="retain the node block and disable capture with enabled:false"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.capture.external) || has(self.capture.external)",message="retain the external block and disable capture with enabled:false"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.database.indexPrefix) || (has(self.database.indexPrefix) && self.database.indexPrefix == oldSelf.database.indexPrefix)",message="index prefix is immutable"
-// +kubebuilder:validation:XValidation:rule="!has(self.enrichment) || !has(self.enrichment.kubernetes) || !has(self.enrichment.kubernetes.enabled) || !self.enrichment.kubernetes.enabled || !has(self.wise) || !has(self.wise.enabled) || self.wise.enabled",message="Kubernetes enrichment requires WISE"
 type ArkimeClusterSpec struct {
-	Enrichment    EnrichmentSpec     `json:"enrichment,omitempty"`
 	NetworkPolicy *NetworkPolicySpec `json:"networkPolicy,omitempty"`
 	Version       string             `json:"version,omitempty"`
 	Image         ImageSpec          `json:"image,omitempty"`
@@ -52,7 +50,7 @@ type ArkimeClusterSpec struct {
 	Capture       CaptureSpec        `json:"capture"`
 	Viewer        ComponentSpec      `json:"viewer,omitempty"`
 	Cont3xt       Cont3xtSpec        `json:"cont3xt,omitempty"`
-	Wise          ComponentSpec      `json:"wise,omitempty"`
+	Wise          WiseSpec           `json:"wise,omitempty"`
 	Web           WebSpec            `json:"web,omitempty"`
 	Retention     RetentionSpec      `json:"retention"`
 }
@@ -246,18 +244,18 @@ type NetworkPolicySpec struct {
 	Egress  []networkingv1.NetworkPolicyEgressRule  `json:"egress,omitempty"`
 }
 
-// EnrichmentSpec configures optional live endpoint metadata.
-type EnrichmentSpec struct {
-	Kubernetes *KubernetesEnrichmentSpec `json:"kubernetes,omitempty"`
+// WiseSpec configures WISE and its default Kubernetes endpoint enrichment.
+type WiseSpec struct {
+	ComponentSpec        `json:",inline"`
+	KubernetesEnrichment KubernetesEnrichmentSpec `json:"kubernetesEnrichment,omitempty"`
 }
 type KubernetesEnrichmentSpec struct {
-	Enabled     bool   `json:"enabled,omitempty"`
-	ClusterName string `json:"clusterName"`
-	// Image is the separately released pod-enricher image, preferably pinned by digest.
-	Image string `json:"image"`
-	// ServiceAccountName is a dedicated administrator-provisioned account with Pod get/list/watch.
-	ServiceAccountName string                      `json:"serviceAccountName"`
-	Resources          corev1.ResourceRequirements `json:"resources,omitempty"`
+	// Enabled defaults to true whenever WISE is enabled.
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
+	// Image overrides the pod-enricher image shipped with the Operator release.
+	Image     string                      `json:"image,omitempty"`
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 	// +kubebuilder:default=5
 	// +kubebuilder:validation:Minimum=1
 	CaptureCacheSeconds int32 `json:"captureCacheSeconds,omitempty"`
@@ -271,5 +269,6 @@ type KubernetesEnrichmentSpec struct {
 }
 
 func KubernetesEnrichment(c *ArkimeCluster) bool {
-	return c.Spec.Enrichment.Kubernetes != nil && c.Spec.Enrichment.Kubernetes.Enabled
+	e := c.Spec.Wise.KubernetesEnrichment
+	return Enabled(c.Spec.Wise.ComponentSpec) && (e.Enabled == nil || *e.Enabled)
 }

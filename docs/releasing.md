@@ -12,7 +12,7 @@ The operator chart renders the same generated CRD by default (`crds.enabled`), s
 
 Controller RBAC permits creating host-access workloads and reading Secrets. `watchNamespaces` limits cache scope but is not a reduction of the published cluster-wide RBAC. Use only a trusted operator service account. Separate installations must not overlap watched namespaces or managed database schemas without explicit coordination.
 
-The release also builds the `pod-enricher` Linux amd64/arm64 binary and `ghcr.io/bwagner5/arkime-pod-enricher` image at the same release version. The release workflow inspects both published image manifests before publishing the draft release. Enrichment image selection is explicit in each ArkimeCluster.
+The release also builds the `pod-enricher` Linux amd64/arm64 binary and `ghcr.io/bwagner5/arkime-pod-enricher` image at the same release version. The release workflow inspects both published image manifests before publishing the draft release. The manager defaults enrichment to the pod-enricher image at its own release version; `spec.wise.kubernetesEnrichment.image` optionally overrides it. Both manager build paths inject the release version.
 
 ## Recover a chart-push failure
 

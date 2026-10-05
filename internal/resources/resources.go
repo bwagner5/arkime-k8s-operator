@@ -175,7 +175,7 @@ func Service(c *api.ArkimeCluster, k string, port int32, protocol corev1.Protoco
 	}
 	return &corev1.Service{ObjectMeta: Meta(c, k), Spec: corev1.ServiceSpec{PublishNotReadyAddresses: k == "wise" && api.KubernetesEnrichment(c), Selector: Labels(c, component), Ports: []corev1.ServicePort{{Name: map[bool]string{true: "tzsp", false: "http"}[protocol == corev1.ProtocolUDP], Port: port, TargetPort: intstr.FromInt32(port), Protocol: protocol}}}}
 }
-func Workload(c *api.ArkimeCluster, k, digest string) client.Object {
+func Workload(c *api.ArkimeCluster, k, digest string, enricherImages ...string) client.Object {
 	p := pod(c, k, digest)
 	port := int32(8005)
 	if k == "node" {
@@ -189,7 +189,11 @@ func Workload(c *api.ArkimeCluster, k, digest string) client.Object {
 	}
 	ct := container(c, k, port)
 	if k == "wise" && api.KubernetesEnrichment(c) {
-		enrichWise(c, &p, &ct)
+		image := ""
+		if len(enricherImages) > 0 {
+			image = enricherImages[0]
+		}
+		enrichWise(c, &p, &ct, image)
 	}
 	if k == "node" || k == "external" {
 		ct.Name = "local-viewer"

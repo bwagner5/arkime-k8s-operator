@@ -21,7 +21,6 @@ Generated from Go API types. See the structural CRD for defaults and validation.
 
 | JSON field | Go type |
 | --- | --- |
-| `enrichment` | `EnrichmentSpec` |
 | `networkPolicy` | `*NetworkPolicySpec` |
 | `version` | `string` |
 | `image` | `ImageSpec` |
@@ -30,7 +29,7 @@ Generated from Go API types. See the structural CRD for defaults and validation.
 | `capture` | `CaptureSpec` |
 | `viewer` | `ComponentSpec` |
 | `cont3xt` | `Cont3xtSpec` |
-| `wise` | `ComponentSpec` |
+| `wise` | `WiseSpec` |
 | `web` | `WebSpec` |
 | `retention` | `RetentionSpec` |
 
@@ -260,20 +259,19 @@ Generated from Go API types. See the structural CRD for defaults and validation.
 | `ingress` | `[]networkingv1.NetworkPolicyIngressRule` |
 | `egress` | `[]networkingv1.NetworkPolicyEgressRule` |
 
-## EnrichmentSpec
+## WiseSpec
 
 | JSON field | Go type |
 | --- | --- |
-| `kubernetes` | `*KubernetesEnrichmentSpec` |
+| `kubernetesEnrichment` | `KubernetesEnrichmentSpec` |
+| inline fields | [ComponentSpec](#componentspec) |
 
 ## KubernetesEnrichmentSpec
 
 | JSON field | Go type |
 | --- | --- |
-| `enabled` | `bool` |
-| `clusterName` | `string` |
+| `enabled` | `*bool` |
 | `image` | `string` |
-| `serviceAccountName` | `string` |
 | `resources` | `corev1.ResourceRequirements` |
 | `captureCacheSeconds` | `int32` |
 | `maxStaleSeconds` | `int32` |

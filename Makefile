@@ -41,7 +41,7 @@ run: ## Run against an explicitly selected kubeconfig context.
 	$(GO) run ./cmd/manager --kube-context="$(KUBE_CONTEXT)" --leader-elect=false
 build: ## Build the manager and pod enricher locally.
 	mkdir -p _artifacts
-	CGO_ENABLED=0 $(GO) build -trimpath -o _artifacts/manager ./cmd/manager
+	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="-X main.version=$(VERSION)" -o _artifacts/manager ./cmd/manager
 	CGO_ENABLED=0 $(GO) build -trimpath -o _artifacts/pod-enricher ./cmd/pod-enricher
 test-e2e: ## Create a disposable kind cluster and run integration tests; keep failure artifacts.
 	bash hack/e2e.sh

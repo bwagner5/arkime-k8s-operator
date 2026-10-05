@@ -28,8 +28,11 @@ make package-charts
 KO_DOCKER_REPO=ko.local ko build --bare --platform "linux/$(go env GOARCH)" ./cmd/manager >_artifacts/e2e/image
 image=$(tail -1 _artifacts/e2e/image)
 kind load docker-image --name "$name" "$image"
+KO_DOCKER_REPO=ko.local ko build --bare --platform "linux/$(go env GOARCH)" ./cmd/pod-enricher >_artifacts/e2e/pod-enricher-image
+enricher_image=$(tail -1 _artifacts/e2e/pod-enricher-image)
+kind load docker-image --name "$name" "$enricher_image"
 helm upgrade --install arkime-crds _artifacts/helm/arkime-k8s-operator-crds-0.0.0-dev.tgz --kube-context "$context"
-helm upgrade --install arkime _artifacts/helm/arkime-k8s-operator-0.0.0-dev.tgz --kube-context "$context" --namespace arkime-system --create-namespace --set crds.enabled=false --set image.repository="${image%:*}" --set image.tag="${image##*:}"
+helm upgrade --install arkime _artifacts/helm/arkime-k8s-operator-0.0.0-dev.tgz --kube-context "$context" --namespace arkime-system --create-namespace --set crds.enabled=false --set image.repository="${image%:*}" --set image.tag="${image##*:}" --set-string podEnricherImage="$enricher_image"
 kubectl --context "$context" create namespace arkime
 kubectl --context "$context" -n arkime apply -f test/e2e/database.yaml
 kubectl --context "$context" -n arkime rollout status deployment/opensearch --timeout=300s

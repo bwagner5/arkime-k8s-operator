@@ -47,14 +47,27 @@ func TestEnvtestStructuralAdmission(t *testing.T) {
 	if err = cl.Create(ctx, c); err != nil {
 		t.Fatal(err)
 	}
-	// CEL rejects enrichment with explicitly disabled WISE at API admission.
+	if c.Spec.Wise.KubernetesEnrichment.Enabled == nil || !*c.Spec.Wise.KubernetesEnrichment.Enabled {
+		t.Fatal("enrichment enabled default missing from CRD admission")
+	}
+	c.Spec.Wise.KubernetesEnrichment.Enabled = res.Ptr(false)
+	if err = cl.Update(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	if err = cl.Get(ctx, client.ObjectKeyFromObject(c), c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Spec.Wise.KubernetesEnrichment.Enabled == nil || *c.Spec.Wise.KubernetesEnrichment.Enabled {
+		t.Fatal("explicit false lost on API round trip")
+	}
+	// Disabling WISE also disables its default enrichment.
 	incompatible := testCluster()
 	incompatible.UID = ""
 	incompatible.Name = "incompatible-enrichment"
 	incompatible.Spec.Wise.Enabled = res.Ptr(false)
-	incompatible.Spec.Enrichment.Kubernetes = &api.KubernetesEnrichmentSpec{Enabled: true, ClusterName: "test", Image: "enricher:test", ServiceAccountName: "pod-reader"}
-	if err = cl.Create(ctx, incompatible); err == nil {
-		t.Fatal("enrichment without WISE admitted")
+	incompatible.Spec.Wise.KubernetesEnrichment = api.KubernetesEnrichmentSpec{Image: "enricher:test"}
+	if err = cl.Create(ctx, incompatible); err != nil {
+		t.Fatal("disabled WISE should admit dormant enrichment configuration", err)
 	}
 	invalid := testCluster()
 	invalid.UID = ""
@@ -121,7 +134,7 @@ func TestEnvtestApplyDoesNotChangeGeneration(t *testing.T) {
 
 	// Native sidecar and policy admission must use the real API server: the fake
 	// client's NetworkPolicy SSA conversion does not cover this resource.
-	c.Spec.Enrichment.Kubernetes = &api.KubernetesEnrichmentSpec{Enabled: true, ClusterName: "test", Image: "enricher:test", ServiceAccountName: "pod-reader", APIEgress: []networkingv1.NetworkPolicyEgressRule{{}}, CaptureIngress: []networkingv1.NetworkPolicyIngressRule{{}}}
+	c.Spec.Wise.KubernetesEnrichment = api.KubernetesEnrichmentSpec{Image: "enricher:test", APIEgress: []networkingv1.NetworkPolicyEgressRule{{}}, CaptureIngress: []networkingv1.NetworkPolicyIngressRule{{}}}
 	wise := res.Workload(c, "wise", "enriched")
 	if err = r.apply(ctx, c, wise, false); err != nil {
 		t.Fatal(err)
@@ -129,7 +142,7 @@ func TestEnvtestApplyDoesNotChangeGeneration(t *testing.T) {
 	if err = r.apply(ctx, c, res.EnrichmentNetworkPolicy(c), false); err != nil {
 		t.Fatal(err)
 	}
-	c.Spec.Enrichment.Kubernetes.Enabled = false
+	c.Spec.Wise.KubernetesEnrichment.Enabled = boolPtr(false)
 	if err = r.apply(ctx, c, res.Workload(c, "wise", "disabled"), false); err != nil {
 		t.Fatal(err)
 	}

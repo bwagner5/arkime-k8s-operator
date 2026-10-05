@@ -8,6 +8,8 @@ image:
   tag: ''
   digest: ''
   pullPolicy: IfNotPresent
+# Optional installation-wide override; empty uses the Operator release image.
+podEnricherImage: ''
 replicas: 1
 leaderElection: true
 watchNamespaces: []

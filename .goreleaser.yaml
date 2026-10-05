@@ -31,6 +31,8 @@ kos:
     bare: true
   - id: manager
     build: manager
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
     base_image: cgr.dev/chainguard/static@sha256:bf639cba19ba56329e6907ac26a7afcdde57a80b6aa66d5100da6883196e6b82
     repositories: [ghcr.io/bwagner5/arkime-k8s-operator]
     platforms: [linux/amd64, linux/arm64]

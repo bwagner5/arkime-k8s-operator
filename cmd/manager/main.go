@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	api "github.com/bwagner5/arkime-k8s-operator/api/v1alpha1"
+	cfg "github.com/bwagner5/arkime-k8s-operator/internal/config"
 	"github.com/bwagner5/arkime-k8s-operator/internal/controller"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -20,8 +21,9 @@ var version = "dev"
 var commit = "unknown"
 
 func main() {
-	var metrics, probe, namespaces, kubeContext string
+	var metrics, probe, namespaces, kubeContext, podEnricherImage string
 	var leader bool
+	flag.StringVar(&podEnricherImage, "pod-enricher-image", cfg.DefaultPodEnricherImage(version), "default Kubernetes pod-enricher image")
 	flag.StringVar(&kubeContext, "kube-context", "", "explicit kubeconfig context")
 	flag.StringVar(&metrics, "metrics-bind-address", "0", "metrics address; 0 disables")
 	flag.StringVar(&probe, "health-probe-bind-address", ":8081", "probe address")
@@ -45,7 +47,7 @@ func main() {
 	must(err)
 	manager, err := ctrl.NewManager(restConfig, opts)
 	must(err)
-	must((&controller.Reconciler{Client: manager.GetClient(), Scheme: scheme}).SetupWithManager(manager))
+	must((&controller.Reconciler{Client: manager.GetClient(), Scheme: scheme, PodEnricherImage: podEnricherImage}).SetupWithManager(manager))
 	must(manager.AddHealthzCheck("healthz", healthz.Ping))
 	must(manager.AddReadyzCheck("readyz", healthz.Ping))
 	ctrl.Log.Info("starting Arkime operator", "version", version, "commit", commit)

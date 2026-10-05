@@ -1,4 +1,4 @@
-# Administrator-owned: the Operator never creates or deletes cluster-wide grants.
+# For standalone WISE only. The Operator provisions its own RBAC automatically.
 # Use a distinct ServiceAccount/binding for each enrichment domain.
 apiVersion: v1
 kind: ServiceAccount

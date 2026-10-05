@@ -1,6 +1,6 @@
 # Kubernetes pod enrichment
 
-The optional Go `pod-enricher` sidecar maps live Pod IPs to cluster, namespace,
+The Go `pod-enricher` sidecar, enabled by default with WISE, maps live Pod IPs to cluster, namespace,
 pod name, UID and node name. Capture remaps matches into `k8s.src.*` and
 `k8s.dst.*`. Source/destination follow session orientation, not permanent traffic
 sender/receiver roles. Generic matches (including XFF) remain generic and are
@@ -14,26 +14,64 @@ the pod address entirely. Never infer a pod from a Service IP or shared node IP.
 Use one Kubernetes cluster per WISE enrichment domain; a cluster field does not
 resolve overlapping IP ranges.
 
-## Enable
+## Configuration
 
-1. Qualify your capture image and capture points as described below.
-2. Have an administrator apply `examples/kubernetes-enrichment-rbac.yaml`,
-   adapting namespace and names. It grants only Pod get/list/watch. The Operator
-   uses the administrator-provisioned RBAC alternative from the design: it does
-   not create ClusterRoles/Bindings, require bind/escalate permissions or attach
-   invalid cross-scope owner references. Administrators remove the binding and
-   account after disabling enrichment and finishing its workload rollout.
-3. Merge `examples/kubernetes-enrichment.yaml` into your ArkimeCluster. Set the
-   separately released watcher image to a version or digest you have built or
-   published. WISE must be enabled. The account must be dedicated to this WISE
-   workload, with no extra permissions or other workloads using it.
-4. If `spec.networkPolicy` is enabled, supply both `apiEgress` and
-   `captureIngress` under `enrichment.kubernetes`. These are standard Kubernetes
-   NetworkPolicy rule arrays, scoped to WISE. Use actual API endpoint CIDRs and
-   ports accounting for your CNI's Service translation, and capture-node source
-   CIDRs on TCP 8081 for host-network capture. Broad empty rules are possible but
-   should only be used intentionally. The Operator cannot discover these rules
-   from namespace pod selectors. Existing internal traffic and DNS rules remain.
+WISE automatically deploys its Kubernetes pod enricher. No separate image,
+cluster-name or ServiceAccount configuration is needed:
+
+```yaml
+spec:
+  wise:
+    enabled: true
+```
+
+The equivalent explicit configuration is:
+
+```yaml
+spec:
+  wise:
+    enabled: true
+    kubernetesEnrichment:
+      enabled: true  # optional; defaults to true
+      # image: registry.example/pod-enricher:custom  # optional override
+```
+
+Set `spec.wise.kubernetesEnrichment.enabled: false` to turn off Kubernetes
+enrichment while keeping WISE and its other sources. Setting `spec.wise.enabled:
+false` turns both off. WISE itself retains its existing enabled-by-default
+behavior when its `enabled` field is omitted.
+
+The default watcher image is `ghcr.io/bwagner5/arkime-pod-enricher:<operator-version>`.
+Both the release binary and container carry that version. The Arkime capture
+version is independent. The `image` field above overrides the default for one
+ArkimeCluster; chart value `podEnricherImage` or manager flag
+`--pod-enricher-image` overrides the installation default. Development builds use
+`0.0.0-dev`; use an explicit locally built image when running from source.
+
+The exported `k8s.cluster` identity is the ArkimeCluster's `namespace/name`.
+The Operator creates a dedicated ServiceAccount, a Pod-only ClusterRole and a
+ClusterRoleBinding for each instance. Tokens are projected only into the watcher.
+RBAC names include the CR UID; a finalizer removes cluster-scoped grants when
+enrichment is disabled or the ArkimeCluster is deleted. Keep the Operator running
+until cleanup completes. The Operator's own chart grants RBAC management but no
+`bind` or `escalate` bypass: it already holds the Pod get/list/watch permissions
+that it delegates. No manual RBAC step is needed for an Operator installation.
+The standalone WISE example still uses its own administrator-provisioned RBAC.
+
+If `spec.networkPolicy` is enabled, supply `apiEgress` and `captureIngress` under
+`spec.wise.kubernetesEnrichment`. These standard NetworkPolicy rule arrays are
+scoped to WISE. Use actual API endpoint CIDRs/ports accounting for CNI Service
+translation, and capture-node source CIDRs on TCP 8081 for host-network capture.
+The Operator cannot infer these rules from namespace pod selectors. Existing
+internal traffic and DNS rules remain.
+
+Upgrading from the initial experimental API requires moving overrides from
+`spec.enrichment.kubernetes` into `spec.wise.kubernetesEnrichment`, removing
+`clusterName` and `serviceAccountName`. Previously provisioned manual RBAC is no
+longer used by the Operator and can be removed after its WISE rollout completes.
+Enrichment is now on by default: set the new `enabled: false` explicitly if you
+want to retain the old unenriched behavior. Enablement changes roll workloads;
+pod inventory changes do not.
 
 The native restartable init sidecar waits for synchronized publication before
 WISE starts. Only it mounts the projected API token. Both containers mount the

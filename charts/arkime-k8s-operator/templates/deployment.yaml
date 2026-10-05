@@ -30,6 +30,9 @@ spec:
           args:
             - --leader-elect={{ .Values.leaderElection }}
             - --watch-namespaces={{ join "," .Values.watchNamespaces }}
+            {{- if .Values.podEnricherImage }}
+            - {{ printf "--pod-enricher-image=%s" .Values.podEnricherImage | quote }}
+            {{- end }}
             {{- if .Values.metrics.enabled }}
             - --metrics-bind-address=:{{ .Values.metrics.port }}
             {{- end }}

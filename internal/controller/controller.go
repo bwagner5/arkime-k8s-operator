@@ -30,7 +30,9 @@ import (
 	"time"
 )
 
-// +kubebuilder:rbac:groups=arkime.arkime.com,resources=arkimeclusters,verbs=get;list;watch
+// +kubebuilder:rbac:groups=arkime.arkime.com,resources=arkimeclusters,verbs=get;list;watch;patch
+// +kubebuilder:rbac:groups=arkime.arkime.com,resources=arkimeclusters/finalizers,verbs=update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=arkime.arkime.com,resources=arkimeclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=secrets;configmaps;services;serviceaccounts;persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets,verbs=get;list;watch;create;update;patch;delete
@@ -42,6 +44,7 @@ import (
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch
 
 type Reconciler struct {
+	PodEnricherImage string
 	client.Client
 	Scheme *runtime.Scheme
 }
@@ -62,7 +65,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !c.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.cleanupEnrichment(ctx, c)
 	}
 	before := c.DeepCopy()
 	finish := func(reason, message string, delay time.Duration) (ctrl.Result, error) {
@@ -78,6 +81,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 	if err := cfg.Validate(c); err != nil {
 		return finish("InvalidSpec", err.Error(), time.Minute)
+	}
+	if err := r.enrichment(ctx, c); err != nil {
+		condition(c, "EnrichmentReady", false, "RBACUnavailable", err.Error())
+		return finish("EnrichmentRBACUnavailable", err.Error(), 10*time.Second)
 	}
 	v, image, err := version.Resolve(c.Spec.Version, c.Status.ResolvedVersion, c.Spec.Image.Reference, c.Spec.Image.AllowUnverified)
 	if err != nil {
@@ -248,7 +255,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return finish("RetainedCaptureRequiresSpec", "retain capture block with enabled:false to keep historical PCAP accessible", time.Minute)
 	}
 	for k := range cfg.Components(c) {
-		if err = r.apply(ctx, c, res.Workload(c, k, digest), false); err != nil {
+		if err = r.apply(ctx, c, res.Workload(c, k, digest, r.PodEnricherImage), false); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -338,7 +345,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 	condition(c, "CaptureReady", captureReady, captureReason, captureMessage)
-	condition(c, "Degraded", api.Enabled(c.Spec.Wise) && !api.KubernetesEnrichment(c) && len(c.Spec.Wise.Config) == 0, "EnrichmentConfiguration", "WISE requires configured sources to enrich sessions")
+	condition(c, "Degraded", api.Enabled(c.Spec.Wise.ComponentSpec) && !api.KubernetesEnrichment(c) && len(c.Spec.Wise.Config) == 0, "EnrichmentConfiguration", "WISE requires configured sources to enrich sessions")
 	c.Status.Endpoints = map[string]string{"viewer": cfg.ViewerURL(c)}
 	if e := c.Spec.Capture.External; e != nil {
 		addresses := []string{}

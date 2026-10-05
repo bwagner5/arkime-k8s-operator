@@ -4,7 +4,6 @@ import (
 	"fmt"
 	api "github.com/bwagner5/arkime-k8s-operator/api/v1alpha1"
 	"github.com/bwagner5/arkime-k8s-operator/internal/podenrichment"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"strconv"
 	"strings"
 )
@@ -13,16 +12,7 @@ func validateEnrichment(c *api.ArkimeCluster) error {
 	if !api.KubernetesEnrichment(c) {
 		return nil
 	}
-	e := c.Spec.Enrichment.Kubernetes
-	if !api.Enabled(c.Spec.Wise) {
-		return fmt.Errorf("Kubernetes enrichment requires WISE")
-	}
-	if e.ClusterName == "" || podenrichment.ValidateValue(e.ClusterName) != nil {
-		return fmt.Errorf("enrichment clusterName is required and must not contain tagger delimiters")
-	}
-	if e.Image == "" || len(validation.IsDNS1123Subdomain(e.ServiceAccountName)) != 0 || e.ServiceAccountName == "" || e.ServiceAccountName == "default" || e.ServiceAccountName == Name(c, "app") {
-		return fmt.Errorf("enrichment requires an image and a dedicated administrator-provisioned serviceAccountName")
-	}
+	e := c.Spec.Wise.KubernetesEnrichment
 	if e.CaptureCacheSeconds < 0 || (e.MaxStaleSeconds != 0 && e.MaxStaleSeconds < 10) {
 		return fmt.Errorf("invalid enrichment cache/freshness duration")
 	}
@@ -83,10 +73,19 @@ func enrichmentSections(c *api.ArkimeCluster, component string, s map[string]map
 	}
 	s["custom-views"]["kubernetes"] = "title:Kubernetes Endpoints;require:k8s;fields:" + strings.Join(fields, ",")
 	if component != "viewer" {
-		seconds := c.Spec.Enrichment.Kubernetes.CaptureCacheSeconds
+		seconds := c.Spec.Wise.KubernetesEnrichment.CaptureCacheSeconds
 		if seconds == 0 {
 			seconds = 5
 		}
 		s["default"]["wiseCacheSecs"] = strconv.Itoa(int(seconds))
 	}
 }
+
+// DefaultPodEnricherImage follows the Operator release, independently of Arkime.
+func DefaultPodEnricherImage(operatorVersion string) string {
+	if operatorVersion == "" || operatorVersion == "dev" {
+		operatorVersion = "0.0.0-dev"
+	}
+	return "ghcr.io/bwagner5/arkime-pod-enricher:" + strings.TrimPrefix(operatorVersion, "v")
+}
+func EnrichmentRBACName(c *api.ArkimeCluster) string { return ID(c) + "-pods-" + Hash(string(c.UID)) }

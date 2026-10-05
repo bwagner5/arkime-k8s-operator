@@ -1,6 +1,6 @@
 # Kubernetes pod enrichment implementation plan
 
-Status: implementation added, 2026-10-05; runtime capture/Cilium/performance qualification remains outstanding. See [implementation and deployment guide](kubernetes-pod-enrichment.md). Administrator-provisioned RBAC is used; no cluster-wide grants are managed by the Operator.
+Status: implementation added, 2026-10-05; runtime capture/Cilium/performance qualification remains outstanding. See [implementation and deployment guide](kubernetes-pod-enrichment.md). The final API defaults enrichment on under WISE, derives cluster identity from the CR, selects the matching Operator release image and manages Pod-only RBAC with finalizer cleanup. Earlier design alternatives below are historical.
 
 ## Recommendation
 
@@ -97,21 +97,22 @@ Start without extra `tags` values: structured fields preserve endpoint identity 
 
 ## WISE and Operator integration
 
-Proposed API (new fields, not valid in the current CRD):
+Implemented API (enabled by default with WISE):
 
 ```yaml
 spec:
   wise:
     enabled: true
-  enrichment:
-    kubernetes:
-      enabled: true
-      clusterName: home
-      captureCacheSeconds: 5
-      maxStaleSeconds: 60
+    kubernetesEnrichment:
+      enabled: true # optional; explicit false disables enrichment
+      # image: registry.example/pod-enricher:custom # optional override
 ```
 
-Require WISE when enabled, with a clear validation error if explicitly disabled. Reserve generated field names and source configuration keys to prevent conflicting overrides. Expose watcher resource requests/limits and an image override using existing Operator conventions.
+Cluster identity comes from the ArkimeCluster namespace/name; the image defaults
+to the matching Operator release. Pod-reader RBAC is automatically provisioned
+and cleaned up with a finalizer.
+
+Disabling WISE also disables enrichment. Reserve generated field names and source configuration keys to prevent conflicting overrides. Expose watcher resource requests/limits and an image override using existing Operator conventions.
 
 Generate this WISE source:
 

@@ -57,8 +57,8 @@ func Components(c *api.ArkimeCluster) map[string]api.ComponentSpec {
 	if api.Enabled(c.Spec.Cont3xt.ComponentSpec) {
 		m["cont3xt"] = c.Spec.Cont3xt.ComponentSpec
 	}
-	if api.Enabled(c.Spec.Wise) {
-		m["wise"] = c.Spec.Wise
+	if api.Enabled(c.Spec.Wise.ComponentSpec) {
+		m["wise"] = c.Spec.Wise.ComponentSpec
 	}
 	if c.Spec.Capture.Node != nil {
 		m["node"] = c.Spec.Capture.Node.ComponentSpec
@@ -287,7 +287,7 @@ func Sections(c *api.ArkimeCluster, component string) map[string]map[string]stri
 		d["esClientCert"] = "/var/run/arkime-mtls/tls.crt"
 		d["esClientKey"] = "/var/run/arkime-mtls/tls.key"
 	}
-	if api.Enabled(c.Spec.Wise) {
+	if api.Enabled(c.Spec.Wise.ComponentSpec) {
 		d["plugins"] = "wise.so"
 		d["wiseURL"] = ServiceURL(c, "wise", 8081)
 		d["viewerPlugins"] = "wise.js"

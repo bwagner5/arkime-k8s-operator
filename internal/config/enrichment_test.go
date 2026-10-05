@@ -9,7 +9,7 @@ import (
 
 func enrichmentFixture() *api.ArkimeCluster {
 	c := fixture()
-	c.Spec.Enrichment.Kubernetes = &api.KubernetesEnrichmentSpec{Enabled: true, ClusterName: "home", Image: "enricher:test", ServiceAccountName: "pod-reader"}
+	c.Spec.Wise.KubernetesEnrichment = api.KubernetesEnrichmentSpec{Image: "enricher:test"}
 	return c
 }
 func TestEnrichmentConfig(t *testing.T) {
@@ -39,16 +39,13 @@ func TestEnrichmentConfig(t *testing.T) {
 	if Sections(c, "wise")["file:kubernetes-pods"]["format"] != "tagger" {
 		t.Fatal("source")
 	}
-	c.Spec.Enrichment.Kubernetes.Enabled = false
+	c.Spec.Wise.KubernetesEnrichment.Enabled = boolPtr(false)
 	if _, ok := Sections(c, "node")["custom-fields-remap"]; ok {
 		t.Fatal("disable retained generated fields")
 	}
 }
 func TestEnrichmentConflicts(t *testing.T) {
 	for _, change := range []func(*api.ArkimeCluster){
-		func(c *api.ArkimeCluster) { f := false; c.Spec.Wise.Enabled = &f },
-		func(c *api.ArkimeCluster) { c.Spec.Enrichment.Kubernetes.ClusterName = "bad;value" },
-		func(c *api.ArkimeCluster) { c.Spec.Enrichment.Kubernetes.ServiceAccountName = "default" },
 		func(c *api.ArkimeCluster) { c.Spec.NetworkPolicy = &api.NetworkPolicySpec{} },
 		func(c *api.ArkimeCluster) {
 			c.Spec.Wise.Config = map[string]map[string]string{"file:kubernetes-pods": {"file": "elsewhere"}}
@@ -62,5 +59,32 @@ func TestEnrichmentConflicts(t *testing.T) {
 		if Validate(c) == nil {
 			t.Fatal("accepted conflict")
 		}
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func TestEnrichmentDefaults(t *testing.T) {
+	c := fixture()
+	if !api.KubernetesEnrichment(c) {
+		t.Fatal("omitted enrichment should be enabled")
+	}
+	if err := Validate(c); err != nil {
+		t.Fatal(err)
+	}
+	c.Spec.Wise.KubernetesEnrichment.Enabled = boolPtr(false)
+	if api.KubernetesEnrichment(c) {
+		t.Fatal("explicit false ignored")
+	}
+	c.Spec.Wise.KubernetesEnrichment.Enabled = boolPtr(true)
+	c.Spec.Wise.Enabled = boolPtr(false)
+	if api.KubernetesEnrichment(c) {
+		t.Fatal("disabled WISE starts enrichment")
+	}
+	if err := Validate(c); err != nil {
+		t.Fatal("disabled WISE should accept dormant enrichment settings", err)
+	}
+	if got := DefaultPodEnricherImage("v1.2.3"); got != "ghcr.io/bwagner5/arkime-pod-enricher:1.2.3" {
+		t.Fatal(got)
 	}
 }

@@ -96,6 +96,10 @@
           "maximum": 65535
         }
       }
+    },
+    "podEnricherImage": {
+      "type": "string",
+      "description": "Optional installation-wide pod-enricher image override; empty uses the Operator release version."
     }
   },
   "allOf": [
