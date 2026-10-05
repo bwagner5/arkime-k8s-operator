@@ -1,0 +1,47 @@
+name: Recover release charts
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft release tag (for example v0.1.2)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # Use the branch containing this recovery fix, not the old release tag.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        with:
+          version: v4.2.4
+      - name: Download original draft artifacts
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          test "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          version="${RELEASE_TAG#v}"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "arkime-k8s-operator-$version.tgz" \
+            --pattern "arkime-k8s-operator-crds-$version.tgz" \
+            --pattern checksums.txt --dir _artifacts/recovery
+      - name: Verify existing images
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          version="${RELEASE_TAG#v}"
+          docker buildx imagetools inspect "ghcr.io/bwagner5/arkime-k8s-operator:$version"
+          docker buildx imagetools inspect "ghcr.io/bwagner5/arkime-pod-enricher:$version"
+      - name: Publish missing original charts
+        run: |
+          printf '%s' "$GH_TOKEN" | helm registry login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          make publish-charts VERSION="${RELEASE_TAG#v}" \
+            CHART_DIR=_artifacts/recovery CHECKSUMS=_artifacts/recovery/checksums.txt
+      - name: Publish verified draft
+        run: gh release edit "$RELEASE_TAG" --draft=false --repo "$GITHUB_REPOSITORY"

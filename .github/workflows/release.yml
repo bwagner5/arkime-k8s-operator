@@ -19,7 +19,7 @@ jobs:
           go-version-file: go.mod
       - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
         with:
-          version: v4.2.0
+          version: v4.2.4
       - uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
         with:
           install-only: true
@@ -41,8 +41,8 @@ jobs:
           docker buildx imagetools inspect "ghcr.io/bwagner5/arkime-pod-enricher:$version"
           helm show chart oci://ghcr.io/bwagner5/arkime-k8s-operator/helm-charts/arkime-k8s-operator --version "$version"
           helm show chart oci://ghcr.io/bwagner5/arkime-k8s-operator/helm-charts/arkime-k8s-operator-crds --version "$version"
-      # GoReleaser drafts the release so a failed verification above leaves nothing public;
-      # publishing is what attaches it to the tag.
+      # Images and OCI charts may already be public when a later step fails.
+      # Keep the GitHub release draft until every artifact is verified.
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

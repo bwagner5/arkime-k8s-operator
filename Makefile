@@ -9,9 +9,11 @@ VERSION ?= 0.0.0-dev
 HELM ?= helm
 GO ?= go
 KUBE_CONTEXT ?=
+CHART_DIR ?= _artifacts/helm
+CHECKSUMS ?= dist/checksums.txt
 OCI_REPOSITORY ?= oci://ghcr.io/bwagner5/arkime-k8s-operator/helm-charts
 
-.PHONY: help generate fmt test verify run test-e2e release-snapshot clean build tools package-charts verify-generated ci-verify release
+.PHONY: help generate fmt test verify run test-e2e release-snapshot clean build tools package-charts verify-generated ci-verify release publish-charts
 help: ## Show contributor commands (overrides: VERSION, KUBE_CONTEXT, OCI_REPOSITORY).
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 generate: ## Generate deepcopy, CRDs, RBAC and reference docs.
@@ -25,6 +27,7 @@ fmt: ## Format Go and tidy both modules.
 test: ## Run unit and available envtest tests without generation.
 	$(GO) test -race ./...
 verify: ## Check formatting, vet, generated drift, charts and release configuration.
+	bash hack/test-publish-charts.sh
 	@test -z "$$(gofmt -l api cmd internal)"
 	$(GO) vet ./...
 	$(MAKE) verify-generated
@@ -63,4 +66,6 @@ ci-verify:
 	$(MAKE) test
 release:
 	goreleaser release --clean
-	for chart in _artifacts/helm/*.tgz; do $(HELM) push "$$chart" "$(OCI_REPOSITORY)"; done
+	$(MAKE) publish-charts VERSION="$$(git describe --tags --exact-match | sed 's/^v//')"
+publish-charts: ## Publish only checksum-verified chart archives, without rebuilding images.
+	HELM="$(HELM)" bash hack/publish-charts.sh "$(VERSION)" "$(CHART_DIR)" "$(CHECKSUMS)" "$(OCI_REPOSITORY)"
