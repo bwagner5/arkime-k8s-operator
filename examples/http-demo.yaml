@@ -1,0 +1,146 @@
+# See docs/http-demo.md for deployment, interval changes, and Arkime searches.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: arkime-http-demo
+data:
+  index.html: |
+    <!doctype html>
+    <html><body>
+    <h1>Hello from the Arkime HTTP demo!</h1>
+    <p>This response traveled between two pods in your Kubernetes cluster.</p>
+    <p>Open this session in Arkime to inspect the HTTP request and response.</p>
+    </body></html>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arkime-http-demo
+spec:
+  selector:
+    app: arkime-http-demo-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arkime-http-demo-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arkime-http-demo-server
+  template:
+    metadata:
+      labels:
+        app: arkime-http-demo-server
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          image: busybox:1.37.0
+          command: [httpd, -f, -p, '8080', -h, /www]
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: content
+              mountPath: /www
+              readOnly: true
+      volumes:
+        - name: content
+          configMap:
+            name: arkime-http-demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arkime-http-demo-client
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: arkime-http-demo-client
+  template:
+    metadata:
+      labels:
+        app: arkime-http-demo-client
+    spec:
+      automountServiceAccountToken: false
+      # Prefer cross-node traffic, but allow a single-node cluster too.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: arkime-http-demo-server
+                topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: client
+          image: busybox:1.37.0
+          env:
+            - name: INTERVAL_SECONDS
+              value: '120'
+          command: [/bin/sh, -c]
+          args:
+            - |
+              case "$INTERVAL_SECONDS" in
+                ''|*[!0-9]*) echo 'INTERVAL_SECONDS must be a positive integer' >&2; exit 1 ;;
+              esac
+              if ! [ "$INTERVAL_SECONDS" -gt 0 ]; then
+                echo 'INTERVAL_SECONDS must be a positive integer' >&2
+                exit 1
+              fi
+              trap 'exit 0' TERM INT
+              sequence=0
+              while true; do
+                sequence=$((sequence + 1))
+                timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                echo "$timestamp: sending demo request $sequence"
+                wget -q -T 10 -O - -U arkime-http-demo \
+                  "http://arkime-http-demo:8080/index.html?demo=arkime-http-demo&sequence=$sequence&time=$timestamp" \
+                  || echo 'Request failed; retrying after the configured interval' >&2
+                sleep "$INTERVAL_SECONDS" &
+                wait $!
+              done
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
