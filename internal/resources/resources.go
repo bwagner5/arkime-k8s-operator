@@ -350,7 +350,12 @@ func Ingress(c *api.ArkimeCluster) *networkingv1.Ingress {
 	return i
 }
 func GatewayObject(c *api.ArkimeCluster, kind, k string, spec map[string]any) *unstructured.Unstructured {
-	return &unstructured.Unstructured{Object: map[string]any{"apiVersion": "gateway.networking.k8s.io/v1", "kind": kind, "metadata": map[string]any{"name": cfg.Name(c, k), "namespace": c.Namespace}, "spec": spec}}
+	// UDPRoute has never graduated past the experimental channel.
+	version := "gateway.networking.k8s.io/v1"
+	if kind == "UDPRoute" {
+		version = "gateway.networking.k8s.io/v1alpha2"
+	}
+	return &unstructured.Unstructured{Object: map[string]any{"apiVersion": version, "kind": kind, "metadata": map[string]any{"name": cfg.Name(c, k), "namespace": c.Namespace}, "spec": spec}}
 }
 func UDPRoutes(c *api.ArkimeCluster) []client.Object {
 	g := c.Spec.Capture.External.Exposure.Gateway
