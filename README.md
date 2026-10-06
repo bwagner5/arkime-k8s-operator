@@ -1,15 +1,7 @@
 # Arkime Kubernetes operator
 
-A Go controller for namespaced `ArkimeCluster` installations. Installs with separate operator and CRD Helm charts. The controller manages an external database schema, viewer, Cont3xt, WISE, host-network node capture, and a single persistent TZSP receiver.
+Run Arkime on Kubernetes with less setup and upkeep. Define an `ArkimeCluster`, and the operator deploys and manages packet capture, the viewer, and optional WISE and Cont3xt services.
 
-Start with [getting started](docs/getting-started.md), [API reference](docs/api.md), [operations](docs/operations.md), and [release process](docs/releasing.md). Application settings belong in `ArkimeCluster`; Helm values configure only the controller.
+It keeps those components configured together, so you can focus on exploring network traffic instead of maintaining Kubernetes resources by hand. Bring your own OpenSearch or Elasticsearch database.
 
-```sh
-make help
-make generate
-make test
-make verify
-make test-e2e
-```
-
-See [Kubernetes pod enrichment](docs/kubernetes-pod-enrichment.md) for WISE’s default live endpoint metadata sidecar and its runtime qualification requirements.
+[Get started](docs/getting-started.md).
